@@ -530,7 +530,11 @@ export function SubmissionMarketMatching() {
             <div className="mt-5">
               {tab === "Documents" && <DocumentsTab />}
               {tab === "Carrier ranking" && (
-                <CarrierRankingTab selected={selectedCarriers} onToggle={toggleCarrier} />
+                <CarrierRankingTab
+                  selected={selectedCarriers}
+                  onToggle={toggleCarrier}
+                  insured={s.insured}
+                />
               )}
               {tab === "Match rules" && <MatchRulesTab />}
               {tab === "AI recommendation" && <MatchRecommendationTab />}
@@ -644,10 +648,13 @@ function DocumentsTab() {
 function CarrierRankingTab({
   selected,
   onToggle,
+  insured,
 }: {
   selected: string[];
   onToggle: (carrier: string) => void;
+  insured: string;
 }) {
+  const dsRecord = diligentSearch.find((d) => d.insured === insured);
   return (
     <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
       <div>
@@ -709,6 +716,57 @@ function CarrierRankingTab({
                         {mi}
                       </Chip>
                     ))}
+                  </div>
+                )}
+
+                {selectable && (
+                  <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-border pt-2 text-[11px]">
+                    <details className="min-w-0 flex-1">
+                      <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
+                        Requirements · {m.requirements.length - m.missingInfo.length} of{" "}
+                        {m.requirements.length} on file
+                      </summary>
+                      <ul className="mt-1.5 space-y-1 pl-1">
+                        {m.requirements.map((req) => {
+                          const missing = m.missingInfo.includes(req);
+                          return (
+                            <li key={req} className="flex items-center gap-1.5">
+                              {missing ? (
+                                <AlertTriangle className="h-3 w-3 shrink-0 text-warn" />
+                              ) : (
+                                <CheckCircle2 className="h-3 w-3 shrink-0 text-success" />
+                              )}
+                              <span
+                                className={missing ? "text-foreground" : "text-muted-foreground"}
+                              >
+                                {req}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </details>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground">Diligent search:</span>
+                      {!m.diligentSearchRequired ? (
+                        <span className="text-muted-foreground">Not required</span>
+                      ) : dsRecord?.evidenceSufficient || dsRecord?.status === "Exempt" ? (
+                        <Chip tone="success">
+                          <CheckCircle2 className="h-2.5 w-2.5" />
+                          {dsRecord.status === "Exempt"
+                            ? "Exempt"
+                            : `Satisfied (${dsRecord.declinationsOnFile}/${dsRecord.requiredDeclinations})`}
+                        </Chip>
+                      ) : (
+                        <Chip tone="warn">
+                          <AlertTriangle className="h-2.5 w-2.5" />
+                          {dsRecord
+                            ? `Not yet — ${dsRecord.declinationsOnFile}/${dsRecord.requiredDeclinations}`
+                            : "Status unknown"}
+                        </Chip>
+                      )}
+                    </div>
                   </div>
                 )}
               </li>
