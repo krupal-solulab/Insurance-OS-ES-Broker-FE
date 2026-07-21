@@ -98,7 +98,7 @@ export function Dashboard() {
                 {submissions.slice(0, 6).map((s) => (
                   <tr key={s.id} className="cursor-pointer transition hover:bg-secondary/40">
                     <Td>
-                      <Link to="/app/workflows/submission-matching" className="font-medium text-foreground hover:text-accent">
+                      <Link to="/app/workflows/$slug" params={{ slug: "submission-matching" }} className="font-medium text-foreground hover:text-accent">
                         {s.insured}
                       </Link>
                       <div className="text-[11px] text-muted-foreground">

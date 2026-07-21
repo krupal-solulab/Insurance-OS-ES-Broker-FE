@@ -105,7 +105,8 @@ function FoundationBadge({ kind }: { kind: "extraction" | "matching" }) {
   const isExt = kind === "extraction";
   return (
     <Link
-      to={isExt ? "/app/foundation/extraction-core" : "/app/foundation/matching-core"}
+      to="/app/foundation/$slug"
+      params={{ slug: isExt ? "extraction-core" : "matching-core" }}
       className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground hover:border-foreground/40"
       title="Reused platform capability"
     >
@@ -1141,7 +1142,7 @@ export function RenewalRemarketing() {
           </Panel>
 
           <div className="grid gap-5 md:grid-cols-2">
-            <Panel title="AI remarket recommendation" actions={<Chip tone={triggerTone as any}>{r.trigger}</Chip>}>
+            <Panel title="AI remarket recommendation" actions={<Chip tone={triggerTone}>{r.trigger}</Chip>}>
               <p className="text-sm text-foreground">
                 {r.trigger === "Renew as-is" && "Exposure and loss trend are stable and the incumbent remains responsive — recommend renewing as-is with no remarket effort."}
                 {r.trigger === "Monitor" && "Exposure growth is within normal range and the incumbent is responsive. No remarket action needed this cycle — flagged for a closer look next renewal if the trend continues."}

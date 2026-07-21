@@ -84,17 +84,40 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "Coverline reads every retail submission, ranks it against your carrier panel, and drafts a recommendation — with your broker approving every decision.",
       },
       { name: "author", content: "Coverline" },
-      { property: "og:title", content: "Coverline — AI operating system for wholesale & E&S broker placement" },
+      {
+        property: "og:title",
+        content: "Coverline — AI operating system for wholesale & E&S broker placement",
+      },
       {
         property: "og:description",
         content:
           "Submission market matching, package assembly, and retail agent communication for wholesale & E&S brokers. Human-approved, cited to source.",
       },
       { property: "og:type", content: "website" },
+      // TODO: add `{ property: "og:url", content: "<real production URL>" }`
+      // once the Vercel/custom domain is finalized — left out rather than
+      // guessing a domain that may not be real.
+      {
+        // TODO: replace with a real designed 1200x630 asset at public/og-image.png —
+        // this path is wired up but the file doesn't exist yet.
+        property: "og:image",
+        content: "/og-image.png",
+      },
       { name: "twitter:card", content: "summary_large_image" },
+      {
+        name: "twitter:title",
+        content: "Coverline — AI operating system for wholesale & E&S broker placement",
+      },
+      {
+        name: "twitter:description",
+        content:
+          "Submission market matching, package assembly, and retail agent communication for wholesale & E&S brokers.",
+      },
+      { name: "twitter:image", content: "/og-image.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
+      { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },

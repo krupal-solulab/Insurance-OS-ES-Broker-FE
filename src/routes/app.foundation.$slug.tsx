@@ -8,10 +8,12 @@ const map: Record<string, React.ComponentType> = {
 };
 
 export const Route = createFileRoute("/app/foundation/$slug")({
-  component: () => {
-    const { slug } = Route.useParams();
-    const Comp = map[slug];
-    if (!Comp) throw notFound();
-    return <Comp />;
-  },
+  component: FoundationRoute,
 });
+
+function FoundationRoute() {
+  const { slug } = Route.useParams();
+  const Comp = map[slug];
+  if (!Comp) throw notFound();
+  return <Comp />;
+}
