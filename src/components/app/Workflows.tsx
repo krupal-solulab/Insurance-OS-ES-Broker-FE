@@ -1867,59 +1867,270 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
    3. Retail Agent Communication Copilot
    ============================================================ */
 
+type Trigger = { source: string; detail: string };
+type FollowUpConfig = { carrier: string; window: string; elapsed: boolean };
+
+const copilotThreads: {
+  id: number;
+  agent: string;
+  agency: string;
+  subject: string;
+  unread: boolean;
+  snippet: string;
+  when: string;
+  tenureYears: number;
+  trigger: Trigger;
+  groundedIn?: { doc: string; page: number };
+  followUp?: FollowUpConfig;
+}[] = [
+  {
+    id: 1,
+    agent: "Ana Ruiz",
+    agency: "Marsh Southeast",
+    subject: "Palmetto Cold Storage — market Q&A",
+    unread: true,
+    snippet: "Confirming spoilage sub-limit at $500k…",
+    when: "8:42 AM",
+    tenureYears: 4,
+    trigger: {
+      source: "Market Matching",
+      detail: "Carrier panel ranked · Kinsale Insurance #1 fit, 4 of 5 carriers in appetite",
+    },
+    groundedIn: { doc: "Palmetto_SOV_2026.xlsx", page: 1 },
+  },
+  {
+    id: 2,
+    agent: "Michael Chen",
+    agency: "HUB International",
+    subject: "Ridgeline Contractors — missing SOV",
+    unread: true,
+    snippet: "Attached is the schedule you requested…",
+    when: "8:11 AM",
+    tenureYears: 2,
+    trigger: {
+      source: "Market Matching",
+      detail: "Per-carrier missing-info identified — SOV and 5-yr loss run outstanding for Markel",
+    },
+    groundedIn: { doc: "ACORD_125_Palmetto.pdf", page: 1 },
+    followUp: { carrier: "Markel", window: "10+ business days", elapsed: true },
+  },
+  {
+    id: 3,
+    agent: "Priya Natarajan",
+    agency: "Alliant Insurance",
+    subject: "Bayou Marine — placement update",
+    unread: false,
+    snippet: "Any early read on markets?…",
+    when: "Yesterday",
+    tenureYears: 6,
+    trigger: {
+      source: "Market Matching",
+      detail: "Carrier panel ranking in progress — no shortlist finalized yet",
+    },
+    followUp: { carrier: "Argo Group", window: "5–7 business days", elapsed: false },
+  },
+  {
+    id: 4,
+    agent: "Jordan Blake",
+    agency: "Gallagher",
+    subject: "Highline Hospitality — no-market notice",
+    unread: false,
+    snippet: "Understood, thanks for the quick turn…",
+    when: "Jan 09",
+    tenureYears: 3,
+    trigger: {
+      source: "Market Matching",
+      detail: "Zero-match result — 0 of 5 panel carriers in appetite for this exposure",
+    },
+  },
+];
+
+const initialCopilotDrafts = [
+  {
+    id: "d1",
+    title: "Quote summary",
+    tone: "Warm",
+    body: "Hi Ana, great news on Palmetto Cold Storage — Kinsale Insurance has come back with indicated terms of $187,400, including the $500k spoilage sub-limit you asked about. Two more markets are still reviewing. Happy to walk through it on a call.",
+  },
+  {
+    id: "d2",
+    title: "Missing info request",
+    tone: "Direct",
+    body: "Hi Michael, to keep Ridgeline Contractors moving with our panel we still need a current SOV and 5-year loss run. Would you be able to send those today so we can get markets responding by Wednesday?",
+  },
+  {
+    id: "d3",
+    title: "No-market notice",
+    tone: "Considerate",
+    body: "Hi Jordan, thanks for thinking of us on Highline Hospitality. After running it across our panel, this one falls outside every carrier's current appetite for the liquor liability exposure — we'd love to see the rest of your submissions this quarter.",
+    noMarketRule: true,
+  },
+];
+
 export function RetailAgentCopilot() {
-  const threads = [
-    {
-      id: 1,
-      agent: "Ana Ruiz · Marsh Southeast",
-      subject: "Palmetto Cold Storage — market Q&A",
-      unread: true,
-      snippet: "Confirming spoilage sub-limit at $500k…",
-      when: "8:42 AM",
-    },
-    {
-      id: 2,
-      agent: "Michael Chen · HUB International",
-      subject: "Ridgeline Contractors — missing SOV",
-      unread: true,
-      snippet: "Attached is the schedule you requested…",
-      when: "8:11 AM",
-    },
-    {
-      id: 3,
-      agent: "Priya Natarajan · Alliant",
-      subject: "Bayou Marine — placement update",
-      unread: false,
-      snippet: "Any early read on markets?…",
-      when: "Yesterday",
-    },
-    {
-      id: 4,
-      agent: "Jordan Blake · Gallagher",
-      subject: "Highline Hospitality — no-market notice",
-      unread: false,
-      snippet: "Understood, thanks for the quick turn…",
-      when: "Jan 09",
-    },
-  ];
   const [active, setActive] = useState(1);
-  const drafts = [
+  const thread = copilotThreads.find((t) => t.id === active)!;
+  const relationship = retailAgents.find((a) => a.agency === thread.agency);
+
+  const [drafts, setDrafts] = useState(initialCopilotDrafts);
+  const [composeText, setComposeText] = useState(
+    "Draft attached — please review and send when ready.",
+  );
+  const [composeBaseline, setComposeBaseline] = useState(
+    "Draft attached — please review and send when ready.",
+  );
+
+  const [messages, setMessages] = useState([
     {
-      title: "Quote summary",
-      tone: "Warm",
-      body: "Hi Ana, great news on Palmetto Cold Storage — Kinsale Insurance has come back with indicated terms of $187,400, including the $500k spoilage sub-limit you asked about. Two more markets are still reviewing. Happy to walk through it on a call.",
+      id: "m1",
+      body: "Thanks Ana — reviewing now, we're ranking it across our panel and should have indicated terms within the hour. Palmetto's loss history and sprinkler profile look strong across every carrier we'd send it to. We can confirm the $500k spoilage sub-limit is a standard ask.",
+      sentAt: null as string | null,
+      regenerating: false,
     },
     {
-      title: "Missing info request",
-      tone: "Direct",
-      body: "Hi Michael, to keep Ridgeline Contractors moving with our panel we still need a current SOV and 5-year loss run. Would you be able to send those today so we can get markets responding by Wednesday?",
+      id: "m2",
+      body: "After — per our standard process we don't disclose the carrier name until you've confirmed broker of record on this account. Once that's on file we'll name Kinsale Insurance directly in the terms letter.",
+      sentAt: null as string | null,
+      regenerating: false,
     },
+  ]);
+
+  const [followUpSent, setFollowUpSent] = useState<Record<number, boolean>>({});
+  const [manualTriggerOpen, setManualTriggerOpen] = useState(false);
+  const [manualCarrier, setManualCarrier] = useState("");
+  const [manualPremium, setManualPremium] = useState("");
+  const [manualOutcome, setManualOutcome] = useState<"Quoted" | "Bound">("Quoted");
+
+  const [log, setLog] = useState<LogEntry[]>(() => [
     {
-      title: "No-market notice",
-      tone: "Considerate",
-      body: "Hi Jordan, thanks for thinking of us on Highline Hospitality. After running it across our panel, this one falls outside every carrier's current appetite for the liquor liability exposure — we'd love to see the rest of your submissions this quarter.",
+      at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      who: "AI (Matching/Ranking Core)",
+      what: `Draft generated — triggered by ${thread.trigger.source}`,
+      ctx: `${thread.agent} · ${thread.subject}`,
+      conf: "91%",
     },
-  ];
+  ]);
+
+  function appendLog(who: string, what: string, ctx: string, conf = "—") {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf,
+      },
+      ...prev,
+    ]);
+  }
+
+  function sendMessage(id: string) {
+    const msg = messages.find((m) => m.id === id);
+    if (!msg || msg.sentAt) return;
+    const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, sentAt: stamp } : m)));
+    appendLog(
+      "Sam D. (Broker)",
+      "Sent — broker-approved draft",
+      `${thread.agent} · ${thread.subject}`,
+    );
+  }
+
+  async function regenerateMessage(id: string) {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, regenerating: true } : m)));
+    try {
+      const msg = messages.find((m) => m.id === id)!;
+      const next = await simulateRequest(msg.body);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, body: next, regenerating: false } : m)),
+      );
+      appendLog(
+        "AI (Matching/Ranking Core)",
+        "Draft regenerated",
+        `${thread.agent} · ${thread.subject}`,
+      );
+    } catch {
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, regenerating: false } : m)));
+      toast.error("Regeneration failed — try again.");
+    }
+  }
+
+  function editMessage(id: string) {
+    const msg = messages.find((m) => m.id === id);
+    if (!msg) return;
+    setComposeText(msg.body);
+    setComposeBaseline(msg.body);
+    toast("Loaded into the reply box below for editing");
+  }
+
+  function applyDraft(id: string) {
+    const d = drafts.find((x) => x.id === id);
+    if (!d) return;
+    setComposeText(d.body);
+    setComposeBaseline(d.body);
+    appendLog(
+      "Sam D. (Broker)",
+      `Selected "${d.title}" draft for this thread`,
+      `${thread.agent} · ${thread.subject}`,
+    );
+  }
+
+  function sendCompose() {
+    const editDistance = Math.abs(composeText.length - composeBaseline.length);
+    appendLog(
+      "Sam D. (Broker)",
+      editDistance === 0
+        ? "Sent — no edits from AI draft"
+        : `Sent — edited (${editDistance} characters different from AI draft)`,
+      `${thread.agent} · ${thread.subject}`,
+    );
+    toast.success("Marked as sent");
+    setComposeBaseline(composeText);
+  }
+
+  function generateFollowUp() {
+    if (!thread.followUp || followUpSent[thread.id]) return;
+    const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    setDrafts((prev) => [
+      {
+        id: `followup-${thread.id}`,
+        title: "No-response follow-up",
+        tone: "Direct",
+        body: `Hi ${thread.agent.split(" ")[0]}, following up on ${thread.subject.split(" — ")[0]} — haven't heard back from ${thread.followUp!.carrier} within their stated ${thread.followUp!.window} acceptance window. Wanted to check in before we nudge them directly.`,
+      },
+      ...prev,
+    ]);
+    setFollowUpSent((prev) => ({ ...prev, [thread.id]: true }));
+    appendLog(
+      "AI (Matching/Ranking Core)",
+      `No-response follow-up generated (1 of 1 max) — ${thread.followUp.carrier}'s ${thread.followUp.window} window elapsed with no reply`,
+      `${thread.agent} · ${thread.subject}`,
+    );
+    toast(`Follow-up drafted at ${stamp}`);
+  }
+
+  function logManualTrigger() {
+    if (!manualCarrier.trim() || !manualPremium.trim()) return;
+    const draftId = `manual-${Date.now() % 100000}`;
+    setDrafts((prev) => [
+      {
+        id: draftId,
+        title: "Quote summary",
+        tone: "Warm",
+        body: `Hi ${thread.agent.split(" ")[0]}, wanted to pass along that ${manualCarrier.trim()} came back ${manualOutcome === "Quoted" ? "with a quote" : "and bound"} at ${manualPremium.trim()} on ${thread.subject.split(" — ")[0]}. Happy to walk through terms whenever works for you.`,
+      },
+      ...prev,
+    ]);
+    appendLog(
+      "Sam D. (Broker)",
+      `Manually logged outcome — ${manualCarrier.trim()} ${manualOutcome.toLowerCase()} at ${manualPremium.trim()} (Quote Comparison not yet built — manual trigger)`,
+      `${thread.agent} · ${thread.subject}`,
+    );
+    setManualCarrier("");
+    setManualPremium("");
+    setManualTriggerOpen(false);
+  }
+
   return (
     <div className="mx-auto max-w-[1500px]">
       <PageHeader
@@ -1934,21 +2145,23 @@ export function RetailAgentCopilot() {
         }
       />
 
-      <div className="grid gap-0 overflow-hidden rounded-2xl border border-border bg-background lg:grid-cols-[280px_minmax(0,1fr)_320px]">
+      <div className="grid gap-0 overflow-hidden rounded-2xl border border-border bg-background lg:grid-cols-[280px_minmax(0,1fr)_340px]">
         {/* Threads */}
         <div className="border-r border-border">
           <div className="border-b border-border p-3">
             <SearchBar placeholder="Search retail agents…" />
           </div>
           <ul className="divide-y divide-border">
-            {threads.map((t) => (
+            {copilotThreads.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setActive(t.id)}
                 className={`flex w-full flex-col gap-1 p-3 text-left ${active === t.id ? "bg-secondary/60" : "hover:bg-secondary/30"}`}
               >
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{t.agent}</span>
+                  <span>
+                    {t.agent} · {t.agency}
+                  </span>
                   <span>{t.when}</span>
                 </div>
                 <div className={`text-sm ${t.unread ? "font-semibold" : ""}`}>{t.subject}</div>
@@ -1962,49 +2175,112 @@ export function RetailAgentCopilot() {
         <div className="flex min-h-[520px] flex-col">
           <div className="border-b border-border p-4">
             <div className="text-xs text-muted-foreground">
-              To: Ana Ruiz &lt;ana.ruiz@marsh.com&gt;
+              To: {thread.agent} &lt;{thread.agent.toLowerCase().replace(" ", ".")}@
+              {thread.agency.toLowerCase().split(" ")[0]}.com&gt;
             </div>
-            <div className="font-serif text-lg">Palmetto Cold Storage — market Q&A</div>
+            <div className="font-serif text-lg">{thread.subject}</div>
+            <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+              <Radar className="h-3 w-3 text-accent" />
+              <span className="text-muted-foreground">Triggered by:</span>
+              <span className="font-medium text-foreground">{thread.trigger.source}</span>
+              <span className="text-muted-foreground">— {thread.trigger.detail}</span>
+            </div>
           </div>
+
+          {thread.followUp && (
+            <div className="border-b border-border bg-secondary/30 p-3 text-[11px]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  No-response follow-up monitor · {thread.followUp.carrier}'s acceptance window:{" "}
+                  {thread.followUp.window}
+                </span>
+                <Chip tone={thread.followUp.elapsed ? "warn" : "neutral"}>
+                  {thread.followUp.elapsed
+                    ? "Window elapsed — no reply"
+                    : "Within window — waiting"}
+                </Chip>
+              </div>
+              {!followUpSent[thread.id] ? (
+                <Button
+                  variant="secondary"
+                  className="mt-2 !py-1 !text-xs"
+                  disabled={!thread.followUp.elapsed}
+                  title={
+                    !thread.followUp.elapsed
+                      ? "Still within the carrier's acceptance window"
+                      : undefined
+                  }
+                  onClick={generateFollowUp}
+                >
+                  Generate follow-up (broker still approves — 1 max)
+                </Button>
+              ) : (
+                <div className="mt-2 flex items-center gap-1.5 text-success">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Follow-up generated — added to Suggested drafts
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex-1 space-y-4 overflow-y-auto p-4 text-sm">
-            <Bubble from="ana" name="Ana Ruiz" at="8:12 AM">
-              Hi team — sending over Palmetto Cold Storage. Two new locations in Jacksonville.
-              Insured would love to confirm the spoilage sub-limit at $500k. Any early read on
-              markets?
+            <Bubble from="ana" name={thread.agent} at="8:12 AM">
+              Hi team — sending over {thread.subject.split(" — ")[0]}. Any early read on this one?
             </Bubble>
-            <Bubble from="you" name="Coverline AI · drafted" at="8:14 AM" ai>
-              Thanks Ana — reviewing now, we're ranking it across our panel and should have
-              indicated terms within the hour. Palmetto's loss history and sprinkler profile look
-              strong across every carrier we'd send it to. We can confirm the $500k spoilage
-              sub-limit is a standard ask.
-              <div className="mt-2 flex gap-2 text-xs">
-                <Button variant="ghost">Regenerate</Button>
-                <Button variant="secondary">Edit</Button>
-                <Button variant="primary">
-                  Send <Send className="h-3 w-3" />
-                </Button>
-              </div>
-            </Bubble>
-            <Bubble from="ana" name="Ana Ruiz" at="8:31 AM">
-              Perfect, thank you. Also — will the carrier be disclosed before we get terms, or
-              after?
-            </Bubble>
-            <Bubble from="you" name="Coverline AI · drafted" at="8:42 AM" ai>
-              After — per our standard process we don't disclose the carrier name until you've
-              confirmed broker of record on this account. Once that's on file we'll name Kinsale
-              Insurance directly in the terms letter.
-              <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
-                <Lock className="h-3 w-3" /> Carrier-name disclosure gate — compliance-controlled,
-                cannot be bypassed from this draft.
-              </div>
-              <div className="mt-2 flex gap-2 text-xs">
-                <Button variant="ghost">Regenerate</Button>
-                <Button variant="secondary">Edit</Button>
-                <Button variant="primary">
-                  Send <Send className="h-3 w-3" />
-                </Button>
-              </div>
-            </Bubble>
+            {messages.map((m, i) => (
+              <Bubble
+                key={m.id}
+                from="you"
+                name="Coverline AI · drafted"
+                at={i === 0 ? "8:14 AM" : "8:42 AM"}
+                ai
+              >
+                {m.body}
+                {thread.groundedIn && (
+                  <div className="mt-2">
+                    <SourceCitation doc={thread.groundedIn.doc} page={thread.groundedIn.page}>
+                      Grounded in {thread.groundedIn.doc} p.{thread.groundedIn.page} — no fabricated
+                      specifics
+                    </SourceCitation>
+                  </div>
+                )}
+                {m.id === "m2" && (
+                  <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <Lock className="h-3 w-3" /> Carrier-name disclosure gate —
+                    compliance-controlled, cannot be bypassed from this draft.
+                  </div>
+                )}
+                <div className="mt-2 flex items-center gap-2 text-xs">
+                  {m.sentAt ? (
+                    <Chip tone="success">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Sent {m.sentAt}
+                    </Chip>
+                  ) : (
+                    <>
+                      <Button
+                        variant="ghost"
+                        disabled={m.regenerating}
+                        onClick={() => regenerateMessage(m.id)}
+                      >
+                        {m.regenerating ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          "Regenerate"
+                        )}
+                      </Button>
+                      <Button variant="secondary" onClick={() => editMessage(m.id)}>
+                        Edit
+                      </Button>
+                      <Button variant="primary" onClick={() => sendMessage(m.id)}>
+                        Send <Send className="h-3 w-3" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </Bubble>
+            ))}
           </div>
           <div className="border-t border-border p-3">
             <div className="rounded-xl border border-border bg-background p-2">
@@ -2015,7 +2291,8 @@ export function RetailAgentCopilot() {
               </div>
               <textarea
                 rows={3}
-                defaultValue="Draft attached — please review and send when ready."
+                value={composeText}
+                onChange={(e) => setComposeText(e.target.value)}
                 className="w-full resize-none rounded bg-transparent p-2 text-sm outline-none"
               />
               <div className="flex items-center gap-2 border-t border-border pt-2">
@@ -2028,7 +2305,7 @@ export function RetailAgentCopilot() {
                 </Button>
                 <Button variant="ghost">Rewrite tone</Button>
                 <div className="ml-auto">
-                  <Button variant="primary">
+                  <Button variant="primary" onClick={sendCompose}>
                     Send <Send className="h-3 w-3" />
                   </Button>
                 </div>
@@ -2037,34 +2314,160 @@ export function RetailAgentCopilot() {
           </div>
         </div>
 
-        {/* AI drafts */}
-        <div className="border-l border-border p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Suggested drafts
+        {/* Context + AI drafts */}
+        <div className="space-y-5 border-l border-border p-4">
+          <div>
+            <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Context behind this draft
             </div>
-            <FoundationBadge kind="matching" />
-          </div>
-          <div className="space-y-3">
-            {drafts.map((d) => (
-              <div key={d.title} className="rounded-lg border border-border p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">{d.title}</div>
-                  <Chip tone="accent">{d.tone}</Chip>
-                </div>
-                <p className="mt-1.5 line-clamp-3 text-[11px] text-muted-foreground">{d.body}</p>
-                <div className="mt-2 flex justify-end gap-1">
-                  <Button variant="ghost" className="!py-1 !text-xs">
-                    Preview
-                  </Button>
-                  <Button variant="secondary" className="!py-1 !text-xs">
-                    Use draft
-                  </Button>
-                </div>
+            <div className="space-y-2 rounded-lg border border-border p-3 text-[11px]">
+              <div className="flex items-center gap-1.5">
+                <Building2 className="h-3 w-3 text-muted-foreground" />
+                <span className="font-medium">{thread.agency}</span>
               </div>
-            ))}
+              {relationship ? (
+                <div className="text-muted-foreground">
+                  Relationship: {thread.tenureYears} years · {relationship.submissions} submissions
+                  · {relationship.bound} bound · {relationship.hitRate} hit rate · avg response{" "}
+                  {relationship.avgResponseTime}
+                </div>
+              ) : (
+                <div className="text-muted-foreground">
+                  Relationship: {thread.tenureYears} years on file
+                </div>
+              )}
+              <div className="text-muted-foreground">
+                Thread history: {messages.length + 1} messages · last reply {thread.when}
+              </div>
+              {thread.followUp && (
+                <div className="text-muted-foreground">
+                  Carrier acceptance window: {thread.followUp.carrier} · {thread.followUp.window}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Suggested drafts
+              </div>
+              <FoundationBadge kind="matching" />
+            </div>
+            <div className="space-y-3">
+              {drafts.map((d) => (
+                <div key={d.id} className="rounded-lg border border-border p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium">{d.title}</div>
+                    <Chip tone="accent">{d.tone}</Chip>
+                  </div>
+                  {d.noMarketRule && (
+                    <div
+                      className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground"
+                      title="No carrier names disclosed in aggregate-framed no-market notices, pending compliance resolution"
+                    >
+                      <ShieldAlert className="h-3 w-3" />
+                      Aggregate framing · Rule RA-TN-06 · pending compliance resolution
+                    </div>
+                  )}
+                  <p className="mt-1.5 line-clamp-3 text-[11px] text-muted-foreground">{d.body}</p>
+                  <div className="mt-2 flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      className="!py-1 !text-xs"
+                      onClick={() => toast(d.title, { description: d.body })}
+                    >
+                      Preview
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="!py-1 !text-xs"
+                      onClick={() => applyDraft(d.id)}
+                    >
+                      Use draft
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-dashed border-border p-3 text-[11px]">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">
+                Quote Comparison isn't built in v1 — log an outcome manually to trigger a draft.
+              </span>
+              <Button
+                variant="ghost"
+                className="!py-1 !text-xs"
+                onClick={() => setManualTriggerOpen((v) => !v)}
+              >
+                {manualTriggerOpen ? "Cancel" : "Log outcome"}
+              </Button>
+            </div>
+            {manualTriggerOpen && (
+              <div className="mt-2 space-y-2">
+                <input
+                  value={manualCarrier}
+                  onChange={(e) => setManualCarrier(e.target.value)}
+                  placeholder="Carrier (e.g. Kinsale Insurance)"
+                  className="w-full rounded border border-border bg-background p-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <div className="flex gap-2">
+                  <input
+                    value={manualPremium}
+                    onChange={(e) => setManualPremium(e.target.value)}
+                    placeholder="Premium (e.g. $187,400)"
+                    className="flex-1 rounded border border-border bg-background p-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                  <select
+                    value={manualOutcome}
+                    onChange={(e) => setManualOutcome(e.target.value as "Quoted" | "Bound")}
+                    className="rounded border border-border bg-background p-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="Quoted">Quoted</option>
+                    <option value="Bound">Bound</option>
+                  </select>
+                </div>
+                <Button
+                  variant="primary"
+                  className="w-full justify-center !py-1 !text-xs"
+                  disabled={!manualCarrier.trim() || !manualPremium.trim()}
+                  onClick={logManualTrigger}
+                >
+                  Log &amp; draft
+                </Button>
+              </div>
+            )}
           </div>
         </div>
+      </div>
+
+      <div className="mt-5">
+        <Panel
+          title="Activity"
+          subtitle="Draft generated, broker edits, and send timestamps — same feedback-loop pattern as other workflows"
+          actions={<FoundationBadge kind="matching" />}
+        >
+          <ul className="divide-y divide-border">
+            {log.slice(0, 8).map((d, i) => (
+              <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
+                <div className="flex-1">
+                  <div>
+                    <b>{d.who}</b> — {d.what}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                </div>
+                {d.conf !== "—" && <Chip tone="neutral">{d.conf}</Chip>}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 text-[10px] text-muted-foreground">
+            Session-only for this prototype — feeds the same Feedback/Eval store pattern as other
+            workflows, not yet persisted.
+          </div>
+        </Panel>
       </div>
     </div>
   );
@@ -2088,7 +2491,12 @@ function Bubble({
     <div className={`flex gap-3 ${isYou ? "justify-end" : ""}`}>
       {!isYou && (
         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-secondary text-xs font-medium">
-          AR
+          {name
+            .split(" ")
+            .map((n) => n[0])
+            .join("")
+            .slice(0, 2)
+            .toUpperCase()}
         </div>
       )}
       <div
