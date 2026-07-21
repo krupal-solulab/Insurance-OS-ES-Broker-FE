@@ -60,6 +60,8 @@ import {
   type Remarket,
   type DiligentSearchRecord,
   type DiligentSearchStateDetail,
+  pipelineCompleteness,
+  placementCycle,
 } from "./mocks";
 import type { ReactNode } from "react";
 
@@ -5266,14 +5268,33 @@ const funnel = [
   { stage: "Bound", count: 104 },
 ];
 
+const REPORT_PERIODS = ["Trailing 30 days", "Trailing 90 days", "Trailing 12 months", "YTD"];
+const REPORT_GENERATED_AT = "Feb 03, 2026 · 14:22 ET";
+
+function overallCompleteness(rows: typeof pipelineCompleteness) {
+  return Math.round(rows.reduce((sum, r) => sum + r.completePct, 0) / rows.length);
+}
+
 export function PipelineCarrierReporting() {
   const max = funnel[0].count;
+  const [scope, setScope] = useState<{ mode: "Scheduled" | "On-demand"; period: string }>({
+    mode: "On-demand",
+    period: "Trailing 30 days",
+  });
+
+  const overall = overallCompleteness(pipelineCompleteness);
+  const worst = [...pipelineCompleteness]
+    .filter((w) => w.gap)
+    .sort((a, b) => a.completePct - b.completePct)[0];
+  const binderGap = pipelineCompleteness.find((w) => w.workflow === "Binder & Policy Issuance");
+  const remarketGap = pipelineCompleteness.find((w) => w.workflow === "Renewal Remarketing");
+
   return (
     <div className="mx-auto max-w-[1500px]">
       <PageHeader
         eyebrow="Workflow 10"
         title="Pipeline & Carrier Performance Reporting"
-        description="Aggregates every pipeline workflow's logs into a funnel view, carrier hit-rate comparison, and remarketing value report."
+        description="Aggregates logs from all six prior workflows into a funnel view, carrier hit-rate comparison, and remarketing value report — scheduled or on-demand, for a selected reporting period."
         actions={
           <Button variant="secondary">
             <Download className="h-4 w-4" />
@@ -5281,11 +5302,91 @@ export function PipelineCarrierReporting() {
           </Button>
         }
       />
+
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 p-4 text-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <Tabs
+            tabs={["Scheduled", "On-demand"]}
+            value={scope.mode}
+            onChange={(v) => setScope((p) => ({ ...p, mode: v as "Scheduled" | "On-demand" }))}
+          />
+          <Tabs
+            tabs={REPORT_PERIODS}
+            value={scope.period}
+            onChange={(v) => setScope((p) => ({ ...p, period: v }))}
+          />
+        </div>
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <Clock className="h-3 w-3 shrink-0" />
+          Pulls logs from all six prior workflows for the selected period.{" "}
+          {scope.mode === "Scheduled"
+            ? "Scheduled — next run Mon 06:00 ET."
+            : `On-demand — generated now, ${REPORT_GENERATED_AT}.`}
+        </div>
+      </div>
+
+      <div className="mb-5">
+        <Panel
+          title="Data completeness (PR-06)"
+          subtitle="Checked before any calculation below runs — not a footnote"
+          actions={<FoundationBadge kind="matching" />}
+        >
+          <div
+            className={`mb-3 flex items-start gap-2 rounded-lg border-2 p-3 text-sm ${overall === 100 ? "border-success/40 bg-success/5" : "border-warn/40 bg-warn/5"}`}
+          >
+            {overall === 100 ? (
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+            )}
+            <div>
+              <b>Overall: {overall}% complete.</b>{" "}
+              {worst
+                ? `${worst.workflow} has the largest gap — ${worst.gap}.`
+                : "All six source workflows are fully complete for this period."}
+            </div>
+          </div>
+          <ul className="divide-y divide-border">
+            {pipelineCompleteness.map((w) => (
+              <li key={w.workflow} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <div className="flex-1">
+                  <div className="font-medium">{w.workflow}</div>
+                  {w.gap && <div className="text-[11px] text-warn">{w.gap}</div>}
+                </div>
+                <Chip tone={w.completePct === 100 ? "success" : "warn"}>{w.completePct}%</Chip>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <GovKpi label="Bound premium YTD" value="$48.2M" sub="+14% YoY" />
+        <GovKpi
+          label="Bound premium YTD"
+          value="$48.2M"
+          sub={binderGap?.gap ? `+14% YoY · Binder: ${binderGap.gap}` : "+14% YoY"}
+        />
         <GovKpi label="Hit ratio" value="38.4%" sub="+1.7pp" />
-        <GovKpi label="Avg placement cycle" value="6.4 days" sub="Target 2–3 days" />
-        <GovKpi label="Renewal retention" value="92%" sub="+3pp" />
+        <div className="rounded-xl border border-border bg-background p-4">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Avg placement cycle (PR-03)
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="font-serif text-3xl leading-none">
+              {placementCycle.delayExcluded}d
+            </span>
+            <span className="text-[11px] text-muted-foreground">delay-excluded</span>
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            Raw {placementCycle.raw}d · excludes {placementCycle.avgBrokerAgentDelay}d avg
+            broker/agent delay · target {placementCycle.target}
+          </div>
+        </div>
+        <GovKpi
+          label="Renewal retention"
+          value="92%"
+          sub={remarketGap?.gap ? `+3pp · Remarketing: ${remarketGap.gap}` : "+3pp"}
+        />
         <GovKpi label="Policies in force" value="2,148" sub="+118 net" />
       </div>
 
@@ -5293,7 +5394,7 @@ export function PipelineCarrierReporting() {
         <Panel
           className="lg:col-span-2"
           title="Submission → bound funnel"
-          subtitle="Trailing 30 days · 104 of 274 submissions bound (38.0%)"
+          subtitle={`${scope.period} · 104 of 274 submissions bound (38.0%)`}
         >
           <div className="space-y-3 pt-2">
             {funnel.map((f) => (
@@ -5369,7 +5470,7 @@ export function PipelineCarrierReporting() {
           <div className="space-y-3 text-sm">
             <div className="rounded-lg border border-border p-3">
               <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                Accounts remarketed, trailing 12mo
+                Accounts remarketed, {scope.period}
               </div>
               <div className="mt-1 font-serif text-2xl">18</div>
             </div>

@@ -1464,3 +1464,36 @@ export const decisionsLog = [
     conf: "—",
   },
 ];
+
+export type WorkflowCompleteness = { workflow: string; completePct: number; gap: string | null };
+
+// PR-06 — completeness check per source workflow, run before any report calculation.
+export const pipelineCompleteness: WorkflowCompleteness[] = [
+  { workflow: "Submission Market Matching", completePct: 100, gap: null },
+  { workflow: "Package Assembly", completePct: 100, gap: null },
+  {
+    workflow: "Quote Comparison",
+    completePct: 97,
+    gap: "3 declined quotes missing a logged reason code",
+  },
+  {
+    workflow: "Binder & Policy Issuance",
+    completePct: 94,
+    gap: "3 records missing a logged bind-confirmation outcome",
+  },
+  { workflow: "Endorsement Processing", completePct: 100, gap: null },
+  {
+    workflow: "Renewal Remarketing",
+    completePct: 89,
+    gap: "2 accounts missing a final renewal decision in the log",
+  },
+];
+
+// PR-03 — placement-cycle time, with broker/agent-caused delay excluded so the figure
+// reflects only what Coverline controls.
+export const placementCycle = {
+  raw: 6.4,
+  delayExcluded: 4.3,
+  avgBrokerAgentDelay: 2.1,
+  target: "2–3 days",
+};
