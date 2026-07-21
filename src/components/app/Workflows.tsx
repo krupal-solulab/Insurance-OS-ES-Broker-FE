@@ -56,6 +56,7 @@ import {
   type Submission,
   type Binder,
   type Discrepancy,
+  type MidTermChange,
 } from "./mocks";
 import type { ReactNode } from "react";
 
@@ -1973,6 +1974,7 @@ const TRIGGER_SOURCE_LABEL: Record<string, string> = {
   "quote-summary": "Quote Comparison",
   "placement-confirmation": "Binder & Policy Issuance — Placement Confirmation",
   "policy-docs-delivered": "Binder & Policy Issuance — Policy Documents Delivered",
+  "endorsement-confirmed": "Endorsement / Mid-Term Change Processing",
 };
 
 export function RetailAgentCopilot({ search = {} }: { search?: Record<string, unknown> }) {
@@ -1983,7 +1985,8 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
   const externalTrigger =
     triggerKind === "quote-summary" ||
     triggerKind === "placement-confirmation" ||
-    triggerKind === "policy-docs-delivered"
+    triggerKind === "policy-docs-delivered" ||
+    triggerKind === "endorsement-confirmed"
       ? {
           kind: triggerKind,
           carrier: typeof search.carrier === "string" ? search.carrier : "",
@@ -2014,7 +2017,9 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
               ? `Broker selected ${externalTrigger.carrier} to present — ${externalTrigger.premium}`
               : externalTrigger.kind === "placement-confirmation"
                 ? `Clean bind confirmed with ${externalTrigger.carrier} — ${externalTrigger.premium}`
-                : `Policy documents reconciled against bound terms and forwarded — ${externalTrigger.carrier}`,
+                : externalTrigger.kind === "policy-docs-delivered"
+                  ? `Policy documents reconciled against bound terms and forwarded — ${externalTrigger.carrier}`
+                  : `Endorsement confirmed and reconciled item by item — ${externalTrigger.carrier}`,
         }
       : thread.trigger;
 
@@ -2042,12 +2047,23 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
         ...initialCopilotDrafts,
       ];
     }
+    if (externalTrigger.kind === "policy-docs-delivered") {
+      return [
+        {
+          id: "triggered-docs",
+          title: "Policy Documents Delivered (from Binder & Issuance)",
+          tone: "Warm",
+          body: `Hi team, the issued policy for ${externalTrigger.insured || "the account"} has been reconciled against the bound terms and is attached. Let us know if you have any questions.`,
+        },
+        ...initialCopilotDrafts,
+      ];
+    }
     return [
       {
-        id: "triggered-docs",
-        title: "Policy Documents Delivered (from Binder & Issuance)",
+        id: "triggered-endorsement",
+        title: "Endorsement Confirmed (from Endorsement Processing)",
         tone: "Warm",
-        body: `Hi team, the issued policy for ${externalTrigger.insured || "the account"} has been reconciled against the bound terms and is attached. Let us know if you have any questions.`,
+        body: `Hi team, the mid-term change for ${externalTrigger.insured || "the account"} has been issued by ${externalTrigger.carrier} and reconciled item by item against your original request. Updated endorsement attached.`,
       },
       ...initialCopilotDrafts,
     ];
@@ -2269,7 +2285,9 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
                   Linked from{" "}
                   {externalTrigger?.kind === "quote-summary"
                     ? "Quote Comparison"
-                    : "Binder & Issuance"}
+                    : externalTrigger?.kind === "endorsement-confirmed"
+                      ? "Endorsement Processing"
+                      : "Binder & Issuance"}
                 </Chip>
               )}
             </div>
@@ -3654,16 +3672,162 @@ export function BinderIssuance() {
    6. Endorsement / Mid-Term Change Processing
    ============================================================ */
 
+type EndorsementOverride = {
+  itemResolution?: Record<string, Discrepancy["resolution"]>;
+  endorsementConfirmedSent?: boolean;
+};
+
+// Same shape as deriveBinderState — plain data derivation, not a hook.
+function deriveEndorsementState(e: MidTermChange, ov: EndorsementOverride) {
+  const items = e.items.map((it) => ({
+    ...it,
+    discrepancy: it.discrepancy
+      ? {
+          ...it.discrepancy,
+          resolution: ov.itemResolution?.[it.label] ?? it.discrepancy.resolution,
+        }
+      : null,
+  }));
+  const unresolvedItems = items.filter((it) => it.discrepancy?.resolution === "Unresolved");
+  const reconciliationClean = e.carrierStatus === "Issued" && unresolvedItems.length === 0;
+
+  const route: "a" | "b" | "c" =
+    e.touchesExposure && e.appetiteRecheck === "Outside appetite"
+      ? "c"
+      : e.classification === "UW-review-required" ||
+          (e.touchesExposure && e.appetiteRecheck === "Unknown")
+        ? "b"
+        : "a";
+
+  const endorsementConfirmedSent = ov.endorsementConfirmedSent ?? e.endorsementConfirmedSent;
+
+  return { items, unresolvedItems, reconciliationClean, route, endorsementConfirmedSent };
+}
+
 export function EndorsementProcessing() {
+  const navigate = useNavigate();
   const [sel, setSel] = useState(midTermChanges[0].id);
   const e = midTermChanges.find((x) => x.id === sel)!;
+  const [overrides, setOverrides] = useState<Record<string, EndorsementOverride>>({});
+  const ov = overrides[e.id] ?? {};
+  const view = deriveEndorsementState(e, ov);
+
+  const [log, setLog] = useState<LogEntry[]>(() => {
+    const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return [
+      {
+        at,
+        who: "AI (Extraction Core)",
+        what: "Issued endorsement reconciled item by item (EP-05) — 1 of 2 items clean, 1 flagged (excess layer attachment mismatch)",
+        ctx: "MTC-8811 · Ridgeline Contractors, Inc.",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Extraction Core)",
+        what: "Issued endorsement reconciled item by item (EP-05) — clean, matches request exactly",
+        ctx: "MTC-8812 · Cedar Grove Assisted Living",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Extraction Core)",
+        what: "Issued endorsement reconciled item by item (EP-05) — clean, matches request exactly",
+        ctx: "MTC-8814 · Palmetto Cold Storage LLC",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Classified UW-review-required (EP-01) · appetite recheck: Unknown — logged as a signal for the deferred Carrier Appetite Intelligence workflow (EP-11, same idea as QC-03)",
+        ctx: "MTC-8811 · Ridgeline Contractors, Inc.",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Classified UW-review-required (EP-01) · appetite recheck: Outside appetite — routed to (c), broker prompted for a new Submission Market Matching pass (EP-07)",
+        ctx: "MTC-8813 · Highline Hospitality Group",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Classified Routine (EP-01) · appetite recheck not applicable — no class/state/severity exposure change",
+        ctx: "MTC-8812 · Cedar Grove Assisted Living",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Classified Routine (EP-01) · appetite recheck: Within appetite — routed to (a) quick send (EP-07)",
+        ctx: "MTC-8814 · Palmetto Cold Storage LLC",
+        conf: "—",
+      },
+    ];
+  });
+
+  function appendLog(who: string, what: string, ctx: string, conf = "—") {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf,
+      },
+      ...prev,
+    ]);
+  }
+
+  function patch(changeId: string, patchOv: EndorsementOverride) {
+    setOverrides((prev) => ({ ...prev, [changeId]: { ...prev[changeId], ...patchOv } }));
+  }
+
+  function resolveItem(label: string, resolution: Discrepancy["resolution"]) {
+    patch(e.id, { itemResolution: { ...ov.itemResolution, [label]: resolution } });
+    const item = e.items.find((i) => i.label === label);
+    appendLog(
+      "Sam D. (Broker)",
+      `Resolved issued-endorsement discrepancy (EP-05) — ${resolution}`,
+      `${e.id} · ${item?.discrepancy?.field}: requested ${item?.discrepancy?.requested} vs confirmed ${item?.discrepancy?.confirmed}`,
+    );
+  }
+
+  function sendEndorsementConfirmed() {
+    patch(e.id, { endorsementConfirmedSent: true });
+    appendLog(
+      "Sam D. (Broker)",
+      "Sent endorsement-confirmed trigger to Retail Agent Comms (EP-10)",
+      `${e.id} · ${e.insured}`,
+    );
+    navigate({
+      to: "/app/workflows/$slug",
+      params: { slug: "agent-copilot" },
+      search: {
+        trigger: "endorsement-confirmed",
+        carrier: e.carrier,
+        insured: e.insured,
+      },
+    });
+  }
+
+  function startMarketMatchingHandoff() {
+    appendLog(
+      "Sam D. (Broker)",
+      "Started a new Submission Market Matching pass for the increased exposure (EP-07c, out of scope — handoff only)",
+      `${e.id} · ${e.insured}`,
+    );
+    toast("Handoff logged — a new Submission Market Matching pass would begin for this exposure.");
+  }
+
   return (
     <div className="mx-auto max-w-[1500px]">
       <PageHeader
         eyebrow="Workflow 06"
         title="Endorsement / Mid-Term Change Processing"
-        description="AI classifies materiality, rechecks appetite against the carrier's current profile, and reconciles multi-part requests item by item before pricing the change."
-        actions={<Button variant="primary">Approve endorsement</Button>}
+        description="AI classifies materiality, rechecks appetite against the carrier's current profile, and reconciles the issued endorsement item by item before any trigger fires — never assuming appetite fit from absent data, never trusting a carrier's issued document without reconciling it."
+        actions={<Button variant="secondary">Return to agent</Button>}
       />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <Panel title="Open mid-term change requests">
@@ -3708,11 +3872,10 @@ export function EndorsementProcessing() {
                   {e.id} · Policy {e.policy} · {e.carrier}
                 </div>
                 <h2 className="mt-1 font-serif text-2xl">{e.insured}</h2>
-                <div className="mt-1 text-xs text-muted-foreground">Requested change: {e.type}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="secondary">Return to agent</Button>
-                <Button variant="primary">Approve · issue endorsement</Button>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Requested change: {e.type} · Requested effective {e.requestedEffectiveDate} (EP-02
+                  extraction)
+                </div>
               </div>
             </div>
           </Panel>
@@ -3735,79 +3898,291 @@ export function EndorsementProcessing() {
               <Row label="Locations" prior="14" now="15" change="+1 · Ocala FL" />
               <Row label="TIV" prior="$42.8M" now="$45.2M" change="+$2.4M" />
               <Row label="Sprinklered" prior="92%" now="93%" change="+1pp" positive />
-              <Row label="Premium" prior="$187,400" now="$201,600" change="+$14,200" strong />
+              <Row
+                label="Premium"
+                prior="$187,400"
+                now="$201,600"
+                change={
+                  e.premiumBearing
+                    ? "Premium-bearing — see proration inputs (EP-06)"
+                    : "No premium impact"
+                }
+                strong
+              />
             </div>
           </Panel>
 
-          <div className="grid gap-5 md:grid-cols-3">
+          <div className="grid gap-5 md:grid-cols-2">
             <Panel
-              title="Materiality classification"
+              title="Classification (EP-01)"
               actions={
-                <Chip
-                  tone={
-                    e.materiality === "Complex"
-                      ? "danger"
-                      : e.materiality === "Material"
-                        ? "warn"
-                        : "success"
-                  }
-                >
-                  {e.materiality}
-                </Chip>
+                <div className="flex items-center gap-2">
+                  <Chip
+                    tone={
+                      e.materiality === "Complex"
+                        ? "danger"
+                        : e.materiality === "Material"
+                          ? "warn"
+                          : "success"
+                    }
+                  >
+                    {e.materiality}
+                  </Chip>
+                  <Chip tone={e.classification === "Routine" ? "success" : "warn"}>
+                    {e.classification}
+                  </Chip>
+                </div>
               }
             >
               <p className="text-sm text-muted-foreground">
                 {e.materiality === "Complex"
-                  ? "Multi-part request — each item reconciled independently below before a combined price is drafted."
+                  ? "Multi-part request — each item reconciled independently below once the carrier responds."
                   : e.materiality === "Material"
-                    ? "Changes total exposure or limits enough to require a full appetite recheck before pricing."
-                    : "No change to exposure basis — priced automatically, routed for a light-touch approval."}
+                    ? "Changes total exposure or limits enough to require a full appetite recheck before drafting."
+                    : "No change to exposure basis — routed for a light-touch approval."}{" "}
+                Classified by type first, then materiality within type — independent of the appetite
+                outcome below.
               </p>
             </Panel>
-            <Panel title="Appetite recheck" actions={<FoundationBadge kind="matching" />}>
-              <ul className="space-y-2 text-sm">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-success" />
-                  New location within {e.carrier}'s permitted state list
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-success" />
-                  TIV still under carrier's treaty cap
-                </li>
-                <li className="flex items-center gap-2">
-                  <Chip
-                    tone={
-                      e.appetiteRecheck === "Still in appetite"
-                        ? "success"
-                        : e.appetiteRecheck === "Marginal — review"
-                          ? "warn"
-                          : "danger"
-                    }
+
+            <Panel title="Appetite recheck (EP-02)" actions={<FoundationBadge kind="matching" />}>
+              {!e.touchesExposure ? (
+                <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+                  Not applicable — this change doesn't touch class, state, or severity exposure, so
+                  no appetite recheck was triggered.
+                </div>
+              ) : (
+                <div
+                  className={`rounded-lg border p-3 text-sm ${
+                    e.appetiteRecheck === "Within appetite"
+                      ? "border-success/30 bg-success/5"
+                      : e.appetiteRecheck === "Outside appetite"
+                        ? "border-2 border-destructive/40 bg-destructive/5"
+                        : "border-2 border-warn/40 bg-warn/5"
+                  }`}
+                >
+                  <div
+                    className={`flex items-center gap-2 font-medium ${
+                      e.appetiteRecheck === "Within appetite"
+                        ? "text-success"
+                        : e.appetiteRecheck === "Outside appetite"
+                          ? "text-destructive"
+                          : "text-warn"
+                    }`}
                   >
+                    {e.appetiteRecheck === "Within appetite" ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    ) : e.appetiteRecheck === "Outside appetite" ? (
+                      <Ban className="h-4 w-4 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                    )}
                     {e.appetiteRecheck}
-                  </Chip>
-                </li>
-              </ul>
-            </Panel>
-            <Panel title="Item-level reconciliation">
-              <ul className="space-y-2 text-sm">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-success" />
-                  {e.type.split(" + ")[0]} — reconciled
-                </li>
-                {e.type.includes("+") && (
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                    {e.type.split(" + ")[1]} — reconciled independently
-                  </li>
-                )}
-                <li className="flex items-center gap-2">
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                  Combined premium impact: {e.impact}
-                </li>
-              </ul>
+                  </div>
+                  <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                    {e.appetiteReasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </Panel>
           </div>
+
+          <Panel title="Premium impact & proration (EP-03 / EP-06)">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              {e.premiumBearing ? (
+                <TrendingUp className="h-4 w-4 text-accent" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 text-success" />
+              )}
+              {e.premiumBearing ? "Premium-bearing change" : "Not premium-bearing"}
+            </div>
+            {e.premiumBearing && e.prorationInputs && (
+              <>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Mid-term premium-bearing change — proration inputs only. No final prorated figure
+                  is calculated here.
+                </p>
+                <ul className="mt-2 space-y-1 text-sm">
+                  <li>
+                    Remaining days in term:{" "}
+                    <span className="font-mono">{e.prorationInputs.remainingDaysInTerm}</span>
+                  </li>
+                  <li>
+                    Annual premium basis:{" "}
+                    <span className="font-mono">{e.prorationInputs.annualPremiumBasis}</span>
+                  </li>
+                  <li>
+                    Requested effective date:{" "}
+                    <span className="font-mono">{e.prorationInputs.effectiveDate}</span>
+                  </li>
+                </ul>
+              </>
+            )}
+          </Panel>
+
+          <Panel title="Broker review routing (EP-07)">
+            {view.route === "a" && (
+              <div className="rounded-lg border border-success/30 bg-success/5 p-3 text-sm">
+                <div className="flex items-center gap-2 font-medium text-success">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  (a) Routine, in appetite — quick review + send
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {e.carrierStatus === "Issued"
+                    ? "Already sent and issued — no underwriting escalation was needed."
+                    : "Draft matches the agent's request exactly and can go straight to the carrier."}
+                </p>
+              </div>
+            )}
+            {view.route === "b" && (
+              <div className="rounded-lg border-2 border-warn/40 bg-warn/5 p-3 text-sm">
+                <div className="flex items-center gap-2 font-medium text-warn">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  (b) UW-review-required or appetite-unknown — send with full context
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {e.carrierStatus === "Issued"
+                    ? "Sent to the carrier's UW team with full context — not a standard endorsement request."
+                    : "Routed to the carrier's UW team with full context, not a standard endorsement request."}
+                </p>
+              </div>
+            )}
+            {view.route === "c" && (
+              <div className="rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
+                <div className="flex items-center gap-2 font-medium text-destructive">
+                  <Ban className="h-4 w-4 shrink-0" />
+                  (c) Outside appetite — new exposure needs its own submission
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Not drafted or sent to the carrier as an endorsement. Broker should start a new
+                  Submission Market Matching pass for the increased exposure (out of scope here —
+                  handoff only).
+                </p>
+                <Button
+                  variant="secondary"
+                  className="mt-3 !py-1 !text-xs"
+                  onClick={startMarketMatchingHandoff}
+                >
+                  Start new Submission Market Matching pass
+                </Button>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Carrier response (EP-08)">
+            {e.carrierStatus === "Pending broker decision" && (
+              <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+                <Info className="h-4 w-4 shrink-0" />
+                Not yet sent — awaiting the broker's routing decision above.
+              </div>
+            )}
+            {e.carrierStatus === "Issued" && (
+              <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-sm">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+                Carrier issued the endorsement — reconciling item by item below, never assumed
+                correct.
+              </div>
+            )}
+            {e.carrierStatus === "Declined" && (
+              <div className="flex items-center gap-2 rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
+                <XCircle className="h-4 w-4 shrink-0 text-destructive" />
+                Carrier declined — returned a decision on the material change instead of issuing.
+              </div>
+            )}
+          </Panel>
+
+          <Panel
+            title="Item-level reconciliation (EP-05)"
+            subtitle={
+              view.items.length > 1
+                ? "Multi-part request — each item reconciled independently"
+                : undefined
+            }
+          >
+            <div className="space-y-3">
+              {view.items.map((it) =>
+                it.issued === null ? (
+                  <div
+                    key={it.label}
+                    className="flex items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground"
+                  >
+                    <Info className="h-4 w-4 shrink-0" />
+                    {it.label} — awaiting carrier response
+                  </div>
+                ) : it.discrepancy ? (
+                  <DiscrepancyBlock
+                    key={it.label}
+                    title={it.label}
+                    discrepancy={it.discrepancy}
+                    onResolve={(r) => resolveItem(it.label, r)}
+                  />
+                ) : (
+                  <div key={it.label} className="flex items-center gap-2 text-sm">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+                    {it.label} — issued matches request exactly
+                  </div>
+                ),
+              )}
+            </div>
+          </Panel>
+
+          <Panel title="Retail Agent Comms trigger (EP-10)">
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-border p-3 text-sm">
+              <div>
+                <div className="font-medium">Endorsement confirmed</div>
+                <div className="text-[11px] text-muted-foreground">
+                  Fires on clean item-level reconciliation; held on any unresolved discrepancy —
+                  same gating discipline as Binder & Issuance
+                </div>
+              </div>
+              {view.endorsementConfirmedSent ? (
+                <Chip tone="success">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Sent
+                </Chip>
+              ) : (
+                <Button
+                  variant="secondary"
+                  className="!py-1 !text-xs"
+                  disabled={!view.reconciliationClean}
+                  title={
+                    !view.reconciliationClean
+                      ? "Resolve the item-level discrepancy first"
+                      : undefined
+                  }
+                  onClick={sendEndorsementConfirmed}
+                >
+                  Send
+                </Button>
+              )}
+            </div>
+          </Panel>
+
+          <Panel
+            title="Audit log (EP-11 / E&O record)"
+            subtitle="Every classification decision, appetite outcome, and reconciliation result — including appetite-unknown resolutions logged as a signal for Carrier Appetite Intelligence"
+            actions={<FoundationBadge kind="matching" />}
+          >
+            <ul className="divide-y divide-border">
+              {log.slice(0, 10).map((d, i) => (
+                <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                  <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
+                  <div className="flex-1">
+                    <div>
+                      <b>{d.who}</b> — {d.what}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 text-[10px] text-muted-foreground">
+              Session-only for this prototype — feeds the same Feedback/Eval store pattern as other
+              workflows.
+            </div>
+          </Panel>
         </div>
       </div>
     </div>

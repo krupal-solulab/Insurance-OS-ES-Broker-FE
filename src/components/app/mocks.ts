@@ -729,6 +729,13 @@ export const binders: Binder[] = [
   },
 ];
 
+export type EndorsementItem = {
+  label: string;
+  requested: string;
+  issued: string | null;
+  discrepancy: Discrepancy | null;
+};
+
 export type MidTermChange = {
   id: string;
   policy: string;
@@ -736,9 +743,21 @@ export type MidTermChange = {
   carrier: string;
   type: string;
   requested: string;
-  impact: string;
+  requestedEffectiveDate: string;
   materiality: "Non-material" | "Material" | "Complex";
-  appetiteRecheck: "Still in appetite" | "Marginal — review" | "Out of appetite";
+  classification: "Routine" | "UW-review-required";
+  touchesExposure: boolean;
+  appetiteRecheck: "Within appetite" | "Outside appetite" | "Unknown" | null;
+  appetiteReasons: string[];
+  premiumBearing: boolean;
+  prorationInputs: {
+    remainingDaysInTerm: number;
+    annualPremiumBasis: string;
+    effectiveDate: string;
+  } | null;
+  carrierStatus: "Pending broker decision" | "Issued" | "Declined";
+  items: EndorsementItem[];
+  endorsementConfirmedSent: boolean;
 };
 
 export const midTermChanges: MidTermChange[] = [
@@ -749,9 +768,31 @@ export const midTermChanges: MidTermChange[] = [
     carrier: "Kinsale Insurance",
     type: "Add location",
     requested: "Today",
-    impact: "+$14,200 premium",
+    requestedEffectiveDate: "Feb 10, 2026",
     materiality: "Material",
-    appetiteRecheck: "Still in appetite",
+    classification: "Routine",
+    touchesExposure: true,
+    appetiteRecheck: "Within appetite",
+    appetiteReasons: [
+      "New location within Kinsale's permitted state list",
+      "TIV still under carrier's treaty cap",
+    ],
+    premiumBearing: true,
+    prorationInputs: {
+      remainingDaysInTerm: 214,
+      annualPremiumBasis: "$187,400",
+      effectiveDate: "Feb 10, 2026",
+    },
+    carrierStatus: "Issued",
+    items: [
+      {
+        label: "Add location — Ocala FL",
+        requested: "New location added, TIV +$2.4M, 93% sprinklered",
+        issued: "New location added, TIV +$2.4M, 93% sprinklered",
+        discrepancy: null,
+      },
+    ],
+    endorsementConfirmedSent: false,
   },
   {
     id: "MTC-8813",
@@ -760,9 +801,30 @@ export const midTermChanges: MidTermChange[] = [
     carrier: "James River Insurance",
     type: "Increase liquor liability limit",
     requested: "Yesterday",
-    impact: "+$9,600 premium",
+    requestedEffectiveDate: "Feb 8, 2026",
     materiality: "Material",
-    appetiteRecheck: "Still in appetite",
+    classification: "UW-review-required",
+    touchesExposure: true,
+    appetiteRecheck: "Outside appetite",
+    appetiteReasons: [
+      "Requested limit ($2M) exceeds James River's stated liquor liability severity appetite for this class (carrier profile caps at $1M)",
+    ],
+    premiumBearing: true,
+    prorationInputs: {
+      remainingDaysInTerm: 187,
+      annualPremiumBasis: "$388,200",
+      effectiveDate: "Feb 8, 2026",
+    },
+    carrierStatus: "Pending broker decision",
+    items: [
+      {
+        label: "Increase liquor liability limit",
+        requested: "Increase to $2,000,000",
+        issued: null,
+        discrepancy: null,
+      },
+    ],
+    endorsementConfirmedSent: false,
   },
   {
     id: "MTC-8812",
@@ -771,9 +833,24 @@ export const midTermChanges: MidTermChange[] = [
     carrier: "Berkley Specialty",
     type: "Add named insured",
     requested: "2d ago",
-    impact: "No premium change",
+    requestedEffectiveDate: "Feb 5, 2026",
     materiality: "Non-material",
-    appetiteRecheck: "Still in appetite",
+    classification: "Routine",
+    touchesExposure: false,
+    appetiteRecheck: null,
+    appetiteReasons: [],
+    premiumBearing: false,
+    prorationInputs: null,
+    carrierStatus: "Issued",
+    items: [
+      {
+        label: "Add named insured",
+        requested: "Add Cedar Grove Holdings LLC as named insured",
+        issued: "Add Cedar Grove Holdings LLC as named insured",
+        discrepancy: null,
+      },
+    ],
+    endorsementConfirmedSent: false,
   },
   {
     id: "MTC-8811",
@@ -782,9 +859,41 @@ export const midTermChanges: MidTermChange[] = [
     carrier: "Markel",
     type: "Remove vehicle + reduce excess layer",
     requested: "3d ago",
-    impact: "-$1,140 premium",
+    requestedEffectiveDate: "Feb 12, 2026",
     materiality: "Complex",
-    appetiteRecheck: "Marginal — review",
+    classification: "UW-review-required",
+    touchesExposure: true,
+    appetiteRecheck: "Unknown",
+    appetiteReasons: [
+      "Combined effect of removing the vehicle and reducing the excess attachment point on the account's overall hazard classification isn't determinable from Markel's published appetite guidelines — flagged for carrier UW judgment",
+    ],
+    premiumBearing: true,
+    prorationInputs: {
+      remainingDaysInTerm: 96,
+      annualPremiumBasis: "$142,900",
+      effectiveDate: "Feb 12, 2026",
+    },
+    carrierStatus: "Issued",
+    items: [
+      {
+        label: "Remove vehicle",
+        requested: "Remove 2019 Ford F-150 (unit 14)",
+        issued: "Removed unit 14 as requested",
+        discrepancy: null,
+      },
+      {
+        label: "Reduce excess layer",
+        requested: "Reduce excess attachment point to $1,000,000",
+        issued: "Carrier issued at $1,500,000 attachment point",
+        discrepancy: {
+          field: "Excess layer attachment point",
+          requested: "$1,000,000",
+          confirmed: "$1,500,000",
+          resolution: "Unresolved",
+        },
+      },
+    ],
+    endorsementConfirmedSent: false,
   },
 ];
 
