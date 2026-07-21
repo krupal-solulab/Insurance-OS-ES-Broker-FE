@@ -529,10 +529,16 @@ export type Quote = {
   premium: string;
   deductible: string;
   limit: string;
+  endorsements: string;
+  effectiveDate: string;
   subjectivities: string[];
   materiality: "Standard" | "Material" | "Deal-breaker";
   validUntil: string;
   status: "Quoted" | "Declined" | "Bound";
+  /** QC-03, declinations only — the carrier's stated reason, if one was given. */
+  declineReason?: string;
+  /** QC-03, declinations only — consistency check against this carrier's known appetite. Log only, no action in v1. */
+  appetiteConsistency?: { status: "Consistent" | "Inconsistent" | "Unclear"; note: string };
 };
 
 // Carrier responses for SUB-24016 · Highline Hospitality Group
@@ -542,6 +548,8 @@ export const quotes: Quote[] = [
     premium: "$421,000",
     deductible: "$10,000",
     limit: "$1M / $2M liquor liability",
+    endorsements: "Assault & battery sublimit $250k, liquor liability follow-form",
+    effectiveDate: "Feb 20, 2026",
     subjectivities: ["Signed application", "Liquor license copy"],
     materiality: "Standard",
     validUntil: "Feb 06, 2026",
@@ -552,6 +560,8 @@ export const quotes: Quote[] = [
     premium: "$448,500",
     deductible: "$10,000",
     limit: "$1M / $2M liquor liability",
+    endorsements: "Assault & battery sublimit $100k, security services exclusion",
+    effectiveDate: "Feb 20, 2026",
     subjectivities: [
       "Signed application",
       "4yr prior liquor liability loss runs",
@@ -566,10 +576,18 @@ export const quotes: Quote[] = [
     premium: "—",
     deductible: "—",
     limit: "—",
+    endorsements: "—",
+    effectiveDate: "—",
     subjectivities: [],
     materiality: "Standard",
     validUntil: "—",
     status: "Declined",
+    declineReason:
+      "Liquor liability limits requested exceed Ategrity's current treaty capacity for hospitality accounts over $50M TIV.",
+    appetiteConsistency: {
+      status: "Consistent",
+      note: "Matches Ategrity's stated appetite profile — they've stepped back from large-TIV hospitality/liquor liability risk over the past two quarters. Not a surprise decline; no follow-up action in v1.",
+    },
   },
 ];
 

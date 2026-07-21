@@ -1967,12 +1967,41 @@ const initialCopilotDrafts = [
   },
 ];
 
-export function RetailAgentCopilot() {
-  const [active, setActive] = useState(1);
+export function RetailAgentCopilot({ search = {} }: { search?: Record<string, unknown> }) {
+  // GAP 5 handoff: when Quote Comparison's "Present to retail agent" navigates here with
+  // a real trigger, it replaces the manual-log fallback below for this thread.
+  const quoteTrigger =
+    search.trigger === "quote-summary"
+      ? {
+          carrier: typeof search.carrier === "string" ? search.carrier : "",
+          premium: typeof search.premium === "string" ? search.premium : "",
+        }
+      : null;
+
+  const [active, setActive] = useState(quoteTrigger ? 4 : 1);
   const thread = copilotThreads.find((t) => t.id === active)!;
   const relationship = retailAgents.find((a) => a.agency === thread.agency);
+  const isTriggeredThread = thread.id === 4 && Boolean(quoteTrigger);
+  const displayTrigger: Trigger = isTriggeredThread
+    ? {
+        source: "Quote Comparison",
+        detail: `Broker selected ${quoteTrigger!.carrier} to present — ${quoteTrigger!.premium}`,
+      }
+    : thread.trigger;
 
-  const [drafts, setDrafts] = useState(initialCopilotDrafts);
+  const [drafts, setDrafts] = useState(() =>
+    quoteTrigger
+      ? [
+          {
+            id: "triggered-quote",
+            title: "Quote summary (from Quote Comparison)",
+            tone: "Warm",
+            body: `Hi Jordan, wanted to pass along that ${quoteTrigger.carrier} came back with a quote at ${quoteTrigger.premium} on Highline Hospitality. Happy to walk through terms whenever works for you.`,
+          },
+          ...initialCopilotDrafts,
+        ]
+      : initialCopilotDrafts,
+  );
   const [composeText, setComposeText] = useState(
     "Draft attached — please review and send when ready.",
   );
@@ -2005,7 +2034,7 @@ export function RetailAgentCopilot() {
     {
       at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       who: "AI (Matching/Ranking Core)",
-      what: `Draft generated — triggered by ${thread.trigger.source}`,
+      what: `Draft generated — triggered by ${displayTrigger.source}`,
       ctx: `${thread.agent} · ${thread.subject}`,
       conf: "91%",
     },
@@ -2182,8 +2211,14 @@ export function RetailAgentCopilot() {
             <div className="mt-2 flex items-center gap-1.5 text-[11px]">
               <Radar className="h-3 w-3 text-accent" />
               <span className="text-muted-foreground">Triggered by:</span>
-              <span className="font-medium text-foreground">{thread.trigger.source}</span>
-              <span className="text-muted-foreground">— {thread.trigger.detail}</span>
+              <span className="font-medium text-foreground">{displayTrigger.source}</span>
+              <span className="text-muted-foreground">— {displayTrigger.detail}</span>
+              {isTriggeredThread && (
+                <Chip tone="accent">
+                  <ArrowRight className="h-2.5 w-2.5" />
+                  Linked from Quote Comparison
+                </Chip>
+              )}
             </div>
           </div>
 
@@ -2395,7 +2430,8 @@ export function RetailAgentCopilot() {
           <div className="rounded-lg border border-dashed border-border p-3 text-[11px]">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">
-                Quote Comparison isn't built in v1 — log an outcome manually to trigger a draft.
+                Manual fallback — use this when a quote/bind outcome didn't come through Quote
+                Comparison automatically.
               </span>
               <Button
                 variant="ghost"
@@ -2526,8 +2562,152 @@ function Bubble({
    4. Quote Comparison & Recommendation
    ============================================================ */
 
+// Illustrative "current date" for this demo's validity-window math (QC-07) —
+// deliberately NOT the real system date, since the mock validUntil dates are
+// set in Feb 2026 and would all read as expired against today's real date.
+const MOCK_TODAY = new Date(2026, 1, 3);
+
+function daysUntil(dateStr: string): number | null {
+  if (!dateStr || dateStr === "—") return null;
+  const target = new Date(dateStr);
+  if (isNaN(target.getTime())) return null;
+  return Math.ceil((target.getTime() - MOCK_TODAY.getTime()) / 86_400_000);
+}
+
+function parsePremium(str: string): number | null {
+  const n = Number(str.replace(/[^0-9.]/g, ""));
+  return str === "—" || isNaN(n) ? null : n;
+}
+
+const MATERIALITY_RANK = { Standard: 0, Material: 1, "Deal-breaker": 2 } as const;
+
+function ValidityChip({ dateStr }: { dateStr: string }) {
+  const days = daysUntil(dateStr);
+  if (days === null) return <span className="text-muted-foreground">—</span>;
+  if (days < 0)
+    return (
+      <Chip tone="danger">
+        <XCircle className="h-2.5 w-2.5" />
+        Expired {Math.abs(days)}d ago
+      </Chip>
+    );
+  if (days <= 3)
+    return (
+      <Chip tone="danger">
+        <AlertTriangle className="h-2.5 w-2.5" />
+        Expires in {days}d
+      </Chip>
+    );
+  if (days <= 7)
+    return (
+      <Chip tone="warn">
+        <Clock className="h-2.5 w-2.5" />
+        Expires in {days}d
+      </Chip>
+    );
+  return (
+    <Chip tone="success">
+      <Clock className="h-2.5 w-2.5" />
+      Expires in {days}d
+    </Chip>
+  );
+}
+
 export function QuoteComparison() {
+  const navigate = useNavigate();
   const responded = quotes.filter((q) => q.status !== "Declined").length;
+  const liveQuotes = quotes.filter((q) => q.status !== "Declined");
+  const declinedQuotes = quotes.filter((q) => q.status === "Declined");
+
+  // QC-06: a genuine trade-off only exists if no quote dominates every other
+  // quote on both premium and subjectivity burden. Computed, not defaulted —
+  // if one quote is both cheaper and lower-materiality, that's a single clear
+  // recommendation, not a multi-option choice.
+  function dominates(a: (typeof quotes)[number], b: (typeof quotes)[number]) {
+    const aPrem = parsePremium(a.premium);
+    const bPrem = parsePremium(b.premium);
+    if (aPrem === null || bPrem === null) return false;
+    const aRank = MATERIALITY_RANK[a.materiality];
+    const bRank = MATERIALITY_RANK[b.materiality];
+    return aPrem <= bPrem && aRank <= bRank && (aPrem < bPrem || aRank < bRank);
+  }
+  const dominantQuote = liveQuotes.find((a) => liveQuotes.every((b) => a === b || dominates(a, b)));
+  const outputMode: "single" | "tradeoff" =
+    liveQuotes.length <= 1 || dominantQuote ? "single" : "tradeoff";
+  const urgentQuotes = liveQuotes.filter((q) => {
+    const d = daysUntil(q.validUntil);
+    return d !== null && d <= 3;
+  });
+
+  const [log, setLog] = useState<LogEntry[]>(() => [
+    {
+      at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      who: "AI (Matching/Ranking Core)",
+      what: `Comparison output produced — ${liveQuotes.length} quote${liveQuotes.length === 1 ? "" : "s"}, ${declinedQuotes.length} declination${declinedQuotes.length === 1 ? "" : "s"} · mode: ${outputMode === "single" ? "single primary recommendation" : "multi-option trade-off"}`,
+      ctx: "SUB-24016 · Highline Hospitality Group",
+      conf: "94%",
+    },
+  ]);
+  const [bindOutcome, setBindOutcome] = useState<string | null>(null);
+
+  function appendLog(who: string, what: string, ctx: string, conf = "—") {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf,
+      },
+      ...prev,
+    ]);
+  }
+
+  function presentToAgent() {
+    appendLog(
+      "Sam D. (Broker)",
+      "Presented James River Insurance to retail agent — handed off to Retail Agent Copilot",
+      "SUB-24016 · Highline Hospitality Group",
+    );
+    navigate({
+      to: "/app/workflows/$slug",
+      params: { slug: "agent-copilot" },
+      search: {
+        trigger: "quote-summary",
+        carrier: "James River Insurance",
+        premium: "$421,000",
+        submissionId: "SUB-24016",
+      },
+    });
+  }
+
+  function requestRevised() {
+    appendLog(
+      "Sam D. (Broker)",
+      "Requested revised terms from carriers",
+      "SUB-24016 · Highline Hospitality Group",
+    );
+    toast("Logged — following up with carriers is out of scope for automation in v1");
+  }
+
+  function declineAllRemarket() {
+    appendLog(
+      "Sam D. (Broker)",
+      "Declined all quotes — remarketing",
+      "SUB-24016 · Highline Hospitality Group",
+    );
+    toast("Logged — remarket via Market Matching or Renewal Remarketing");
+  }
+
+  function recordBindOutcome(outcome: "Bound" | "Lost to another market") {
+    setBindOutcome(outcome);
+    appendLog(
+      "Sam D. (Broker)",
+      `Recorded eventual outcome — ${outcome}`,
+      "SUB-24016 · Highline Hospitality Group",
+    );
+  }
+
   return (
     <div className="mx-auto max-w-[1500px]">
       <PageHeader
@@ -2558,9 +2738,49 @@ export function QuoteComparison() {
                 "Subjectivities classified by materiality (Standard / Material / Deal-breaker)",
               kind: "matching",
             },
+            {
+              label:
+                "Declination reason extracted · appetite consistency checked (QC-03, log only)",
+              kind: "matching",
+            },
+            {
+              label:
+                "Validity windows tracked against today (QC-07) · output mode computed, not defaulted (QC-06)",
+              kind: "matching",
+            },
             { label: "Recommendation drafted — 94% confidence", kind: "matching" },
           ]}
         />
+      </div>
+
+      {urgentQuotes.length > 0 && (
+        <div className="mb-5 flex items-start gap-2 rounded-xl border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div>
+            <b>Validity urgency (QC-07):</b> {urgentQuotes.map((q) => q.carrier).join(", ")}{" "}
+            expiring within 3 days — this tracking runs on every quote regardless of whether a
+            multi-quote comparison exists.
+          </div>
+        </div>
+      )}
+
+      <div
+        className={`mb-5 rounded-xl border p-3 text-sm ${outputMode === "single" ? "border-success/30 bg-success/5" : "border-warn/30 bg-warn/5"}`}
+      >
+        <div className="flex items-center gap-2 font-medium">
+          {outputMode === "single" ? (
+            <CheckCircle2 className="h-4 w-4 text-success" />
+          ) : (
+            <Info className="h-4 w-4 text-warn" />
+          )}
+          Output mode (QC-06):{" "}
+          {outputMode === "single" ? "Single primary recommendation" : "Multi-option trade-off"}
+        </div>
+        <p className="mt-1 text-[12px] text-muted-foreground">
+          {outputMode === "single"
+            ? `Computed, not defaulted — ${dominantQuote?.carrier} dominates on both premium and subjectivity burden (QC-01), so no genuine trade-off exists here.`
+            : "Computed, not defaulted — no quote dominates on both premium and subjectivity burden, so this is presented as an explicit multi-option choice."}
+        </p>
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
@@ -2593,6 +2813,8 @@ export function QuoteComparison() {
                   <th className="py-2 text-right">Premium</th>
                   <th className="py-2 text-right">Deductible</th>
                   <th className="py-2 text-left pl-4">Limit</th>
+                  <th className="py-2 text-left pl-4">Endorsements</th>
+                  <th className="py-2 text-left pl-4">Effective</th>
                   <th className="py-2 text-left pl-4">Subjectivities</th>
                   <th className="py-2 text-left pl-4">Materiality</th>
                   <th className="py-2 text-left pl-4">Valid until</th>
@@ -2606,6 +2828,8 @@ export function QuoteComparison() {
                     <td className="py-2.5 text-right font-mono">{q.premium}</td>
                     <td className="py-2.5 text-right font-mono">{q.deductible}</td>
                     <td className="py-2.5 pl-4 text-xs">{q.limit}</td>
+                    <td className="py-2.5 pl-4 text-xs text-muted-foreground">{q.endorsements}</td>
+                    <td className="py-2.5 pl-4 text-xs">{q.effectiveDate}</td>
                     <td className="py-2.5 pl-4 text-xs text-muted-foreground">
                       {q.subjectivities.length ? q.subjectivities.join("; ") : "—"}
                     </td>
@@ -2622,7 +2846,10 @@ export function QuoteComparison() {
                         {q.materiality}
                       </Chip>
                     </td>
-                    <td className="py-2.5 pl-4 text-xs">{q.validUntil}</td>
+                    <td className="py-2.5 pl-4 text-xs">
+                      <div>{q.validUntil}</div>
+                      <ValidityChip dateStr={q.validUntil} />
+                    </td>
                     <td className="py-2.5 pl-4">
                       <Chip
                         tone={
@@ -2641,6 +2868,46 @@ export function QuoteComparison() {
               </tbody>
             </table>
           </div>
+
+          {declinedQuotes.length > 0 && (
+            <div className="mt-5 border-t border-border pt-4">
+              <div className="mb-2 text-xs font-medium">
+                Declination detail · QC-03 (log only, no action in v1)
+              </div>
+              <ul className="space-y-2">
+                {declinedQuotes.map((q) => (
+                  <li key={q.carrier} className="rounded-lg border border-border p-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium">{q.carrier}</span>
+                      {q.appetiteConsistency && (
+                        <Chip
+                          tone={
+                            q.appetiteConsistency.status === "Consistent"
+                              ? "success"
+                              : q.appetiteConsistency.status === "Inconsistent"
+                                ? "warn"
+                                : "neutral"
+                          }
+                        >
+                          Appetite: {q.appetiteConsistency.status}
+                        </Chip>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[12px] text-muted-foreground">
+                      <b className="text-foreground">Stated reason:</b>{" "}
+                      {q.declineReason ?? "No reason given in the decline email."}
+                    </div>
+                    {q.appetiteConsistency && (
+                      <div className="mt-1 text-[12px] text-muted-foreground">
+                        <b className="text-foreground">Consistency check:</b>{" "}
+                        {q.appetiteConsistency.note}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </Panel>
 
         <Panel title="AI recommendation">
@@ -2658,15 +2925,73 @@ export function QuoteComparison() {
             </p>
           </div>
           <div className="mt-4 space-y-2 text-sm">
-            <Button variant="primary" className="w-full justify-center">
+            <Button variant="primary" className="w-full justify-center" onClick={presentToAgent}>
               Present to retail agent
             </Button>
-            <Button variant="secondary" className="w-full justify-center">
+            <Button variant="secondary" className="w-full justify-center" onClick={requestRevised}>
               Request revised terms
             </Button>
-            <Button variant="danger" className="w-full justify-center">
+            <Button variant="danger" className="w-full justify-center" onClick={declineAllRemarket}>
               Decline all — remarket
             </Button>
+          </div>
+          <div className="mt-3 text-[10px] text-muted-foreground">
+            "Present to retail agent" hands this off to the Retail Agent Copilot's Quote Summary
+            draft —{" "}
+            <Link
+              to="/app/workflows/$slug"
+              params={{ slug: "agent-copilot" }}
+              className="text-accent underline-offset-2 hover:underline"
+            >
+              open Copilot →
+            </Link>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="mt-5">
+        <Panel
+          title="Activity"
+          subtitle="Comparison output, broker selection, and eventual bind outcome — same feedback-loop pattern as other workflows"
+          actions={<FoundationBadge kind="matching" />}
+        >
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-[11px]">
+            <span className="text-muted-foreground">Record eventual outcome:</span>
+            <Button
+              variant="ghost"
+              className="!py-1 !text-xs"
+              onClick={() => recordBindOutcome("Bound")}
+            >
+              Bound
+            </Button>
+            <Button
+              variant="ghost"
+              className="!py-1 !text-xs"
+              onClick={() => recordBindOutcome("Lost to another market")}
+            >
+              Lost to another market
+            </Button>
+            {bindOutcome && (
+              <Chip tone={bindOutcome === "Bound" ? "success" : "danger"}>{bindOutcome}</Chip>
+            )}
+          </div>
+          <ul className="divide-y divide-border">
+            {log.slice(0, 8).map((d, i) => (
+              <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
+                <div className="flex-1">
+                  <div>
+                    <b>{d.who}</b> — {d.what}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                </div>
+                {d.conf !== "—" && <Chip tone="neutral">{d.conf}</Chip>}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 text-[10px] text-muted-foreground">
+            Session-only for this prototype — feeds the same Feedback/Eval store pattern as other
+            workflows, not yet persisted.
           </div>
         </Panel>
       </div>
