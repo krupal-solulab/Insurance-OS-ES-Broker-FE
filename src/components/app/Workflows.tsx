@@ -57,6 +57,7 @@ import {
   type Binder,
   type Discrepancy,
   type MidTermChange,
+  type Remarket,
 } from "./mocks";
 import type { ReactNode } from "react";
 
@@ -4193,17 +4194,150 @@ export function EndorsementProcessing() {
    7. Renewal Remarketing
    ============================================================ */
 
+type RemarketOverride = {
+  remarketedTimesInHistory?: number;
+  finalDecision?: "Approved" | "Non-renewed" | "Info requested";
+};
+
+// Same shape as deriveBinderState/deriveEndorsementState — plain data derivation.
+function deriveRemarketState(r: Remarket, ov: RemarketOverride) {
+  const daysSinceRequested = -(daysUntil(r.renewalTermsRequestedDate) ?? 0);
+  const nonResponseFlagged =
+    !r.renewalTermsReceivedDate && daysSinceRequested > r.renewalTermsWindowDays;
+  const remarketedTimesInHistory = ov.remarketedTimesInHistory ?? r.remarketedTimesInHistory;
+  const finalDecision = ov.finalDecision ?? null;
+  return { daysSinceRequested, nonResponseFlagged, remarketedTimesInHistory, finalDecision };
+}
+
+function usd(value: string): number | null {
+  if (!/\d/.test(value)) return null;
+  return Number(value.replace(/[^0-9.-]/g, ""));
+}
+
 export function RenewalRemarketing() {
   const [selected, setSelected] = useState(remarketing[0].id);
   const r = remarketing.find((x) => x.id === selected)!;
+  const [overrides, setOverrides] = useState<Record<string, RemarketOverride>>({});
+  const ov = overrides[r.id] ?? {};
+  const view = deriveRemarketState(r, ov);
+
+  const [log, setLog] = useState<LogEntry[]>(() => {
+    const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return [
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Trigger level URGENT_REMARKET (RR-04) · incumbent silent non-response flagged (RR-07)",
+        ctx: "RMK-24-4099 · Ridgeline Contractors, Inc.",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Remarket executed (FULL_REMARKET) — 2 of 3 markets quoted, 1 decline; incumbent's renewal offer remained most competitive",
+        ctx: "RMK-24-4101 · Highline Hospitality Group",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Trigger level FULL_REMARKET (RR-04) — loss ratio trend 33%→37%→42% plus new location exposure",
+        ctx: "RMK-24-4101 · Highline Hospitality Group",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Remarket executed (LIGHT_REMARKET_CHECK) — 2 of 2 markets quoted, 1 exception-based, incumbent's renewal offer remained most competitive",
+        ctx: "RMK-24-4102 · Palmetto Cold Storage LLC",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Trigger level LIGHT_REMARKET_CHECK (RR-04) — payroll +14%, loss ratio trend 31%→34%→38%",
+        ctx: "RMK-24-4102 · Palmetto Cold Storage LLC",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Trigger level NO_REMARKET (RR-04) — stable exposure and loss trend, incumbent responsive",
+        ctx: "RMK-24-4100 · Cedar Grove Assisted Living",
+        conf: "—",
+      },
+      {
+        at,
+        who: "AI (Matching/Ranking Core)",
+        what: "Trigger level NO_REMARKET (RR-04) — clean loss trend, incumbent responsive, monitoring the cyber sublimit ask",
+        ctx: "RMK-24-4098 · Copperline Data Center Ops",
+        conf: "—",
+      },
+    ];
+  });
+
+  function appendLog(who: string, what: string, ctx: string, conf = "—") {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf,
+      },
+      ...prev,
+    ]);
+  }
+
+  function patch(remarketId: string, patchOv: RemarketOverride) {
+    setOverrides((prev) => ({ ...prev, [remarketId]: { ...prev[remarketId], ...patchOv } }));
+  }
+
+  function finalizeDecision(decision: "Approved" | "Non-renewed" | "Info requested") {
+    patch(r.id, { finalDecision: decision });
+    appendLog(
+      "Sam D. (Broker)",
+      `Final renewal decision (RR-09): ${decision}`,
+      `${r.id} · ${r.insured}`,
+    );
+    if (decision === "Approved" && r.triggerLevel !== "NO_REMARKET") {
+      const next = view.remarketedTimesInHistory + 1;
+      patch(r.id, { remarketedTimesInHistory: next });
+      appendLog(
+        "AI (Matching/Ranking Core)",
+        `History updated (RR-08 write) — remarketed ${next} time${next === 1 ? "" : "s"} in the last 3 years`,
+        `${r.id} · ${r.insured}`,
+      );
+    }
+  }
+
+  function reinvokeMarketMatching() {
+    appendLog(
+      "Sam D. (Broker)",
+      "Approved — re-invoked Submission Market Matching (RR-05) against the account's current profile",
+      `${r.id} · ${r.insured}`,
+    );
+    toast("Handoff logged — Submission Market Matching would re-run against the current profile.");
+  }
+
+  function initiateUrgentRemarket() {
+    appendLog(
+      "Sam D. (Broker)",
+      "Initiated remarket immediately (URGENT), in parallel with continued incumbent follow-up",
+      `${r.id} · ${r.insured}`,
+    );
+    toast("Handoff logged — remarket initiated now, incumbent follow-up continues in parallel.");
+  }
+
   const triggerTone =
-    r.trigger === "Renew as-is"
+    r.triggerLevel === "NO_REMARKET"
       ? "success"
-      : r.trigger === "Monitor"
-        ? "neutral"
-        : r.trigger === "Remarket — competitive check"
+      : r.triggerLevel === "LIGHT_REMARKET_CHECK"
+        ? "accent"
+        : r.triggerLevel === "FULL_REMARKET"
           ? "warn"
           : "danger";
+
   return (
     <div className="mx-auto max-w-[1500px]">
       <PageHeader
@@ -4236,16 +4370,16 @@ export function RenewalRemarketing() {
                 </div>
                 <Chip
                   tone={
-                    row.trigger === "Renew as-is"
+                    row.triggerLevel === "NO_REMARKET"
                       ? "success"
-                      : row.trigger === "Monitor"
-                        ? "neutral"
-                        : row.trigger === "Remarket — competitive check"
+                      : row.triggerLevel === "LIGHT_REMARKET_CHECK"
+                        ? "accent"
+                        : row.triggerLevel === "FULL_REMARKET"
                           ? "warn"
                           : "danger"
                   }
                 >
-                  {row.trigger}
+                  {row.triggerLabel}
                 </Chip>
               </button>
             ))}
@@ -4265,11 +4399,23 @@ export function RenewalRemarketing() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="secondary">Request information</Button>
-                <Button variant="danger">Non-renew</Button>
-                <Button variant="primary">Approve recommendation</Button>
+                <Button variant="secondary" onClick={() => finalizeDecision("Info requested")}>
+                  Request information
+                </Button>
+                <Button variant="danger" onClick={() => finalizeDecision("Non-renewed")}>
+                  Non-renew
+                </Button>
+                <Button variant="primary" onClick={() => finalizeDecision("Approved")}>
+                  Approve recommendation
+                </Button>
               </div>
             </div>
+            {view.finalDecision && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 p-2 text-xs">
+                <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                Final renewal decision recorded: {view.finalDecision} (RR-09, logged below)
+              </div>
+            )}
           </Panel>
 
           <Panel
@@ -4277,6 +4423,10 @@ export function RenewalRemarketing() {
             subtitle="Prior term vs. renewal submission"
             actions={<FoundationBadge kind="extraction" />}
           >
+            <p className="mb-2 text-[11px] text-muted-foreground">
+              Current profile built from the bound record (Binder & Issuance) plus mid-term
+              endorsement history (Endorsement Processing) — not just the original bind terms.
+            </p>
             <div className="grid grid-cols-3 gap-0 overflow-hidden rounded-lg border border-border text-sm">
               <div className="bg-secondary/60 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                 Attribute
@@ -4293,9 +4443,14 @@ export function RenewalRemarketing() {
               <Row label="Payroll" prior="$4.2M" now="$4.8M" change="+14.3%" />
               <Row label="Sprinklered TIV" prior="88%" now="92%" change="+4pp" positive />
               <Row
+                label="Loss ratio trend (RR-02)"
+                prior={r.lossRatioHistory[0]}
+                now={r.lossRatioHistory.join(" → ")}
+              />
+              <Row
                 label="Incumbent responsiveness"
                 prior="—"
-                now={r.incumbentResponsive ? "Responsive" : "Non-responsive — 12+ business days"}
+                now={r.incumbentResponsive ? "Responsive" : "Non-responsive — see RR-07 below"}
               />
               <Row
                 label="Indicated premium"
@@ -4310,23 +4465,25 @@ export function RenewalRemarketing() {
           <div className="grid gap-5 md:grid-cols-2">
             <Panel
               title="AI remarket recommendation"
-              actions={<Chip tone={triggerTone}>{r.trigger}</Chip>}
+              actions={<Chip tone={triggerTone}>{r.triggerLabel}</Chip>}
             >
               <p className="text-sm text-foreground">
-                {r.trigger === "Renew as-is" &&
+                {r.triggerLevel === "NO_REMARKET" &&
                   "Exposure and loss trend are stable and the incumbent remains responsive — recommend renewing as-is with no remarket effort."}
-                {r.trigger === "Monitor" &&
-                  "Exposure growth is within normal range and the incumbent is responsive. No remarket action needed this cycle — flagged for a closer look next renewal if the trend continues."}
-                {r.trigger === "Remarket — competitive check" &&
+                {r.triggerLevel === "LIGHT_REMARKET_CHECK" &&
                   "Rate change and exposure growth justify a light competitive check against 1–2 alternate markets, without disrupting the incumbent relationship."}
-                {r.trigger === "Remarket — active shop" &&
-                  "Incumbent has gone non-responsive and loss trend has deteriorated — recommend an active shop across the full panel before the expiring date."}
+                {r.triggerLevel === "FULL_REMARKET" &&
+                  "Loss trend deterioration plus a real exposure change justify shopping the full panel before the expiring date, while the incumbent stays responsive."}
+                {r.triggerLevel === "URGENT_REMARKET" &&
+                  "Incumbent has gone non-responsive and loss trend has deteriorated — this is a lapse-risk situation. Elevated priority: initiate a remarket immediately."}
               </p>
               <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
                 <li>· Flag: {r.flag}</li>
                 <li>
-                  · Remarketing-history weighting: this account has been remarketed 0 times in the
-                  last 3 years
+                  · Remarketing-history weighting (RR-08): this account has been remarketed{" "}
+                  {view.remarketedTimesInHistory} time
+                  {view.remarketedTimesInHistory === 1 ? "" : "s"} in the last 3 years — written by
+                  this workflow's own decision log below, not a separately maintained counter.
                 </li>
               </ul>
             </Panel>
@@ -4350,6 +4507,205 @@ export function RenewalRemarketing() {
               </div>
             </Panel>
           </div>
+
+          <Panel title="Incumbent monitoring (RR-03 / RR-07)">
+            <div className="flex items-center gap-2 text-sm">
+              {r.incumbentAppetiteRecheck.status === "Confirmed" ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 shrink-0 text-warn" />
+              )}
+              Incumbent appetite recheck: {r.incumbentAppetiteRecheck.status}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {r.incumbentAppetiteRecheck.reasoning}
+            </p>
+            {view.nonResponseFlagged ? (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <div>
+                  <div className="font-medium text-destructive">Silent non-response (RR-07)</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Renewal terms requested {r.renewalTermsRequestedDate}, {view.daysSinceRequested}{" "}
+                    days elapsed against a {r.renewalTermsWindowDays}-day window despite broker
+                    follow-up — nothing received.
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-muted-foreground">
+                Renewal terms{" "}
+                {r.renewalTermsReceivedDate
+                  ? `received ${r.renewalTermsReceivedDate}`
+                  : "still within the expected window"}
+                .
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Broker review routing (RR-06 branches)">
+            {r.triggerLevel === "NO_REMARKET" && (
+              <div className="rounded-lg border border-success/30 bg-success/5 p-3 text-sm">
+                <div className="flex items-center gap-2 font-medium text-success">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  (a) No remarket — review incumbent terms and accept
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  No remarket effort needed this cycle. Use the header actions below to record the
+                  final decision.
+                </p>
+              </div>
+            )}
+            {(r.triggerLevel === "LIGHT_REMARKET_CHECK" || r.triggerLevel === "FULL_REMARKET") && (
+              <div className="rounded-lg border-2 border-warn/40 bg-warn/5 p-3 text-sm">
+                <div className="flex items-center gap-2 font-medium text-warn">
+                  <TrendingUp className="h-4 w-4 shrink-0" />
+                  (b) {r.triggerLevel === "LIGHT_REMARKET_CHECK"
+                    ? "Light check"
+                    : "Full remarket"}{" "}
+                  — approve to re-invoke Market Matching
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Approving re-invokes Submission Market Matching (RR-05) against the account's
+                  current profile.
+                </p>
+                <Button
+                  variant="secondary"
+                  className="mt-3 !py-1 !text-xs"
+                  onClick={reinvokeMarketMatching}
+                >
+                  Approve — re-invoke Market Matching
+                </Button>
+              </div>
+            )}
+            {r.triggerLevel === "URGENT_REMARKET" && (
+              <div className="rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
+                <div className="flex items-center gap-2 font-medium text-destructive">
+                  <Ban className="h-4 w-4 shrink-0" />
+                  (c) Urgent — elevated priority, lapse risk
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Broker should initiate a remarket immediately, in parallel with continued
+                  incumbent follow-up — don't wait for a response before shopping the account.
+                </p>
+                <Button
+                  variant="danger"
+                  className="mt-3 !py-1 !text-xs"
+                  onClick={initiateUrgentRemarket}
+                >
+                  Initiate remarket now
+                </Button>
+              </div>
+            )}
+          </Panel>
+
+          <Panel
+            title="Remarket comparison — alternatives vs. incumbent renewal offer (RR-06)"
+            subtitle="Reuses Quote Comparison's normalization discipline"
+          >
+            {r.remarketQuotes.length === 0 ? (
+              <div className="text-sm text-muted-foreground">
+                No remarket executed this cycle — {r.triggerLevel}.
+              </div>
+            ) : (
+              <>
+                <div className="mb-3 rounded-lg border border-border bg-secondary/30 p-3 text-sm">
+                  <div className="font-medium">{r.incumbentCarrier} — renewal offer</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Premium {r.indicated} (prior {r.priorPremium}, {r.change})
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                      <tr>
+                        <th className="py-2 text-left">Carrier</th>
+                        <th className="py-2 text-right">Premium</th>
+                        <th className="py-2 text-right">vs. incumbent</th>
+                        <th className="py-2 text-right">Deductible</th>
+                        <th className="py-2 text-left pl-4">Limit</th>
+                        <th className="py-2 text-left pl-4">Materiality</th>
+                        <th className="py-2 text-left pl-4">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {r.remarketQuotes.map((q) => {
+                        const incumbentValue = usd(r.indicated);
+                        const quoteValue = usd(q.premium);
+                        const delta =
+                          incumbentValue !== null && quoteValue !== null
+                            ? quoteValue - incumbentValue
+                            : null;
+                        return (
+                          <tr
+                            key={q.carrier}
+                            className={q.status === "Declined" ? "opacity-50" : ""}
+                          >
+                            <td className="py-2.5 font-medium">
+                              <div className="flex items-center gap-2">
+                                {q.carrier}
+                                {q.exceptionBased && <Chip tone="warn">Exception-based</Chip>}
+                              </div>
+                            </td>
+                            <td className="py-2.5 text-right font-mono">{q.premium}</td>
+                            <td className="py-2.5 text-right font-mono text-xs">
+                              {delta === null
+                                ? "—"
+                                : `${delta < 0 ? "-" : "+"}$${Math.abs(delta).toLocaleString()}`}
+                            </td>
+                            <td className="py-2.5 text-right font-mono">{q.deductible}</td>
+                            <td className="py-2.5 pl-4 text-xs">{q.limit}</td>
+                            <td className="py-2.5 pl-4">
+                              <Chip
+                                tone={
+                                  q.materiality === "Deal-breaker"
+                                    ? "danger"
+                                    : q.materiality === "Material"
+                                      ? "warn"
+                                      : "success"
+                                }
+                              >
+                                {q.materiality}
+                              </Chip>
+                            </td>
+                            <td className="py-2.5 pl-4">
+                              <Chip tone={q.status === "Quoted" ? "accent" : "danger"}>
+                                {q.status}
+                              </Chip>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </Panel>
+
+          <Panel
+            title="Decision log (RR-09 / E&O record)"
+            subtitle="Trigger level, remarket outcome, and final decision — this is what RR-08 reads next cycle"
+            actions={<FoundationBadge kind="matching" />}
+          >
+            <ul className="divide-y divide-border">
+              {log.slice(0, 10).map((d, i) => (
+                <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                  <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
+                  <div className="flex-1">
+                    <div>
+                      <b>{d.who}</b> — {d.what}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 text-[10px] text-muted-foreground">
+              Session-only for this prototype — feeds the same Feedback/Eval store pattern as other
+              workflows.
+            </div>
+          </Panel>
         </div>
       </div>
     </div>

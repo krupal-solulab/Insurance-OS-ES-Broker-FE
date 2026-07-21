@@ -897,6 +897,20 @@ export const midTermChanges: MidTermChange[] = [
   },
 ];
 
+export type RemarketTriggerLevel =
+  "NO_REMARKET" | "LIGHT_REMARKET_CHECK" | "FULL_REMARKET" | "URGENT_REMARKET";
+
+export type RemarketQuote = {
+  carrier: string;
+  premium: string;
+  deductible: string;
+  limit: string;
+  subjectivities: string[];
+  materiality: "Standard" | "Material" | "Deal-breaker";
+  exceptionBased: boolean;
+  status: "Quoted" | "Declined";
+};
+
 export type Remarket = {
   id: string;
   insured: string;
@@ -906,9 +920,17 @@ export type Remarket = {
   indicated: string;
   change: string;
   lossRatio: string;
+  lossRatioHistory: string[];
   flag: string;
   incumbentResponsive: boolean;
-  trigger: "Renew as-is" | "Monitor" | "Remarket — competitive check" | "Remarket — active shop";
+  incumbentAppetiteRecheck: { status: "Confirmed" | "Uncertain"; reasoning: string };
+  renewalTermsRequestedDate: string;
+  renewalTermsWindowDays: number;
+  renewalTermsReceivedDate: string | null;
+  triggerLevel: RemarketTriggerLevel;
+  triggerLabel: string;
+  remarketedTimesInHistory: number;
+  remarketQuotes: RemarketQuote[];
 };
 
 export const remarketing: Remarket[] = [
@@ -921,9 +943,41 @@ export const remarketing: Remarket[] = [
     indicated: "$187,400",
     change: "+10.9%",
     lossRatio: "38%",
+    lossRatioHistory: ["31%", "34%", "38%"],
     flag: "Payroll +14%",
     incumbentResponsive: true,
-    trigger: "Monitor",
+    incumbentAppetiteRecheck: {
+      status: "Confirmed",
+      reasoning: "Kinsale's current profile still lists cold storage as an actively sought class.",
+    },
+    renewalTermsRequestedDate: "Jan 20, 2026",
+    renewalTermsWindowDays: 15,
+    renewalTermsReceivedDate: "Jan 29, 2026",
+    triggerLevel: "LIGHT_REMARKET_CHECK",
+    triggerLabel: "Remarket — competitive check",
+    remarketedTimesInHistory: 0,
+    remarketQuotes: [
+      {
+        carrier: "Great American",
+        premium: "$179,800",
+        deductible: "$10,000",
+        limit: "$5M cold storage equipment breakdown",
+        subjectivities: ["Signed application", "Updated SOV"],
+        materiality: "Standard",
+        exceptionBased: false,
+        status: "Quoted",
+      },
+      {
+        carrier: "Lexington Insurance",
+        premium: "$174,300",
+        deductible: "$15,000",
+        limit: "$5M cold storage equipment breakdown",
+        subjectivities: ["Signed application", "Refrigeration maintenance log"],
+        materiality: "Material",
+        exceptionBased: true,
+        status: "Quoted",
+      },
+    ],
   },
   {
     id: "RMK-24-4101",
@@ -934,9 +988,52 @@ export const remarketing: Remarket[] = [
     indicated: "$421,000",
     change: "+8.4%",
     lossRatio: "42%",
+    lossRatioHistory: ["33%", "37%", "42%"],
     flag: "New location added",
     incumbentResponsive: true,
-    trigger: "Remarket — competitive check",
+    incumbentAppetiteRecheck: {
+      status: "Confirmed",
+      reasoning:
+        "James River remains in appetite for this class, but has flagged the loss trend for review at renewal.",
+    },
+    renewalTermsRequestedDate: "Jan 15, 2026",
+    renewalTermsWindowDays: 15,
+    renewalTermsReceivedDate: "Jan 28, 2026",
+    triggerLevel: "FULL_REMARKET",
+    triggerLabel: "Remarket — active shop",
+    remarketedTimesInHistory: 1,
+    remarketQuotes: [
+      {
+        carrier: "Markel",
+        premium: "$402,600",
+        deductible: "$10,000",
+        limit: "$1M / $2M liquor liability",
+        subjectivities: ["Signed application", "Liquor license copy"],
+        materiality: "Standard",
+        exceptionBased: false,
+        status: "Quoted",
+      },
+      {
+        carrier: "Kinsale Insurance",
+        premium: "$396,900",
+        deductible: "$10,000",
+        limit: "$1M / $2M liquor liability",
+        subjectivities: ["Signed application", "Assault & battery sublimit acknowledgment"],
+        materiality: "Standard",
+        exceptionBased: false,
+        status: "Quoted",
+      },
+      {
+        carrier: "Ategrity Specialty",
+        premium: "—",
+        deductible: "—",
+        limit: "—",
+        subjectivities: [],
+        materiality: "Deal-breaker",
+        exceptionBased: false,
+        status: "Declined",
+      },
+    ],
   },
   {
     id: "RMK-24-4100",
@@ -947,9 +1044,21 @@ export const remarketing: Remarket[] = [
     indicated: "$118,400",
     change: "+5.1%",
     lossRatio: "29%",
+    lossRatioHistory: ["27%", "28%", "29%"],
     flag: "Clean",
     incumbentResponsive: true,
-    trigger: "Renew as-is",
+    incumbentAppetiteRecheck: {
+      status: "Confirmed",
+      reasoning:
+        "Berkley's assisted-living appetite is unchanged and this account is a clean renewal.",
+    },
+    renewalTermsRequestedDate: "Feb 05, 2026",
+    renewalTermsWindowDays: 15,
+    renewalTermsReceivedDate: "Feb 12, 2026",
+    triggerLevel: "NO_REMARKET",
+    triggerLabel: "Renew as-is",
+    remarketedTimesInHistory: 0,
+    remarketQuotes: [],
   },
   {
     id: "RMK-24-4099",
@@ -960,9 +1069,42 @@ export const remarketing: Remarket[] = [
     indicated: "$96,200",
     change: "+5.3%",
     lossRatio: "44%",
+    lossRatioHistory: ["30%", "37%", "44%"],
     flag: "Class code change",
     incumbentResponsive: false,
-    trigger: "Remarket — active shop",
+    incumbentAppetiteRecheck: {
+      status: "Uncertain",
+      reasoning:
+        "Markel hasn't responded to the appetite recheck request — can't confirm the class code change is still within their profile.",
+    },
+    renewalTermsRequestedDate: "Jan 05, 2026",
+    renewalTermsWindowDays: 15,
+    renewalTermsReceivedDate: null,
+    triggerLevel: "URGENT_REMARKET",
+    triggerLabel: "Remarket — urgent (lapse risk)",
+    remarketedTimesInHistory: 0,
+    remarketQuotes: [
+      {
+        carrier: "Berkley Specialty",
+        premium: "$104,100",
+        deductible: "$5,000",
+        limit: "$1M / $2M general liability",
+        subjectivities: ["Signed application", "Updated equipment schedule"],
+        materiality: "Standard",
+        exceptionBased: false,
+        status: "Quoted",
+      },
+      {
+        carrier: "Ategrity Specialty",
+        premium: "$98,700",
+        deductible: "$5,000",
+        limit: "$1M / $2M general liability",
+        subjectivities: ["Signed application", "Loss run authorization"],
+        materiality: "Material",
+        exceptionBased: true,
+        status: "Quoted",
+      },
+    ],
   },
   {
     id: "RMK-24-4098",
@@ -973,9 +1115,21 @@ export const remarketing: Remarket[] = [
     indicated: "$612,300",
     change: "+4.8%",
     lossRatio: "12%",
+    lossRatioHistory: ["11%", "12%", "12%"],
     flag: "Cyber sublimit request",
     incumbentResponsive: true,
-    trigger: "Renew as-is",
+    incumbentAppetiteRecheck: {
+      status: "Confirmed",
+      reasoning:
+        "Beazley's data-center cyber appetite is unchanged; the sublimit ask is a minor add.",
+    },
+    renewalTermsRequestedDate: "Jan 25, 2026",
+    renewalTermsWindowDays: 15,
+    renewalTermsReceivedDate: "Feb 01, 2026",
+    triggerLevel: "NO_REMARKET",
+    triggerLabel: "Monitor",
+    remarketedTimesInHistory: 0,
+    remarketQuotes: [],
   },
 ];
 
