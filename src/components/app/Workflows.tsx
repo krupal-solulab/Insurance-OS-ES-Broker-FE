@@ -58,6 +58,8 @@ import {
   type Discrepancy,
   type MidTermChange,
   type Remarket,
+  type DiligentSearchRecord,
+  type DiligentSearchStateDetail,
 } from "./mocks";
 import type { ReactNode } from "react";
 
@@ -564,9 +566,10 @@ export function SubmissionMarketMatching() {
                   selected={selectedCarriers}
                   onToggle={toggleCarrier}
                   insured={s.insured}
+                  state={s.state}
                 />
               )}
-              {tab === "Match rules" && <MatchRulesTab insured={s.insured} />}
+              {tab === "Match rules" && <MatchRulesTab insured={s.insured} state={s.state} />}
               {tab === "AI recommendation" && (
                 <MatchRecommendationTab
                   selected={selectedCarriers}
@@ -685,12 +688,15 @@ function CarrierRankingTab({
   selected,
   onToggle,
   insured,
+  state,
 }: {
   selected: string[];
   onToggle: (carrier: string) => void;
   insured: string;
+  state: string;
 }) {
   const dsRecord = diligentSearch.find((d) => d.insured === insured);
+  const dsState = dsRecord?.states.find((s) => s.state === state);
   return (
     <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
       <div>
@@ -796,18 +802,18 @@ function CarrierRankingTab({
                       <span className="text-muted-foreground">Diligent search:</span>
                       {!m.diligentSearchRequired ? (
                         <span className="text-muted-foreground">Not required</span>
-                      ) : dsRecord?.evidenceSufficient || dsRecord?.status === "Exempt" ? (
+                      ) : dsState?.evidenceSufficient || dsState?.status === "Exempt" ? (
                         <Chip tone="success">
                           <CheckCircle2 className="h-2.5 w-2.5" />
-                          {dsRecord.status === "Exempt"
+                          {dsState.status === "Exempt"
                             ? "Exempt"
-                            : `Satisfied (${dsRecord.declinationsOnFile}/${dsRecord.requiredDeclinations})`}
+                            : `Satisfied (${dsState.declinationsOnFile}/${dsState.requiredDeclinations})`}
                         </Chip>
                       ) : (
                         <Chip tone="warn">
                           <AlertTriangle className="h-2.5 w-2.5" />
-                          {dsRecord
-                            ? `Not yet — ${dsRecord.declinationsOnFile}/${dsRecord.requiredDeclinations}`
+                          {dsState
+                            ? `Not yet — ${dsState.declinationsOnFile}/${dsState.requiredDeclinations}`
                             : "Status unknown"}
                         </Chip>
                       )}
@@ -852,10 +858,11 @@ function CarrierRankingTab({
   );
 }
 
-function MatchRulesTab({ insured }: { insured: string }) {
+function MatchRulesTab({ insured, state }: { insured: string; state: string }) {
   const [carrier, setCarrier] = useState(submissionMarkets[0].carrier);
   const m = submissionMarkets.find((x) => x.carrier === carrier)!;
   const dsRecord = diligentSearch.find((d) => d.insured === insured);
+  const dsState = dsRecord?.states.find((s) => s.state === state);
   const hardPassed = m.hardExclusions.every((h) => h.pass);
   const scoreSum = m.softScoreFactors.reduce((sum, f) => sum + f.points, 0);
 
@@ -938,19 +945,19 @@ function MatchRulesTab({ insured }: { insured: string }) {
 
         <div>
           <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Pass C · Diligent-search compliance — independent of ranking outcome
+            Pass C · Diligent-search flag (MM-07) — independent of ranking outcome
           </div>
           {!m.diligentSearchRequired ? (
             <div className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
               Not required for this carrier's paper.
             </div>
-          ) : dsRecord?.evidenceSufficient || dsRecord?.status === "Exempt" ? (
+          ) : dsState?.evidenceSufficient || dsState?.status === "Exempt" ? (
             <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-foreground">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
               <div>
-                {dsRecord.status === "Exempt"
+                {dsState.status === "Exempt"
                   ? "Exempt for this state/class."
-                  : `Satisfied — ${dsRecord.declinationsOnFile}/${dsRecord.requiredDeclinations} declinations on file with sufficient evidence.`}
+                  : `Satisfied — ${dsState.declinationsOnFile}/${dsState.requiredDeclinations} declinations on file with sufficient evidence.`}
                 <div className="mt-1 text-[11px] text-muted-foreground">
                   This is checked independently and does not affect the fit score above — a carrier
                   can be a strong fit while diligent search is still pending.
@@ -961,8 +968,8 @@ function MatchRulesTab({ insured }: { insured: string }) {
             <div className="flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-foreground">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
               <div>
-                {dsRecord
-                  ? `Not yet satisfied — ${dsRecord.declinationsOnFile}/${dsRecord.requiredDeclinations} declinations on file.`
+                {dsState
+                  ? `Not yet satisfied — ${dsState.declinationsOnFile}/${dsState.requiredDeclinations} declinations on file.`
                   : "Status unknown."}
                 <div className="mt-1 text-[11px] text-muted-foreground">
                   This is checked independently and does not affect the fit score above.
@@ -1376,9 +1383,8 @@ function CarrierPackageCard({
   const manualFields = CARRIER_MANUAL_FIELDS[market.carrier] ?? [];
   const unfilledFields = manualFields.filter((f) => !manualValues[f.label]?.trim());
   const dsRecord = diligentSearch.find((d) => d.insured === submission.insured);
-  const dsSatisfied = dsRecord
-    ? dsRecord.evidenceSufficient || dsRecord.status === "Exempt"
-    : false;
+  const dsState = dsRecord?.states.find((s) => s.state === submission.state);
+  const dsSatisfied = dsState ? dsState.evidenceSufficient || dsState.status === "Exempt" : false;
   const formatIssue = FORMAT_ISSUES[market.carrier] ?? null;
 
   const status: PackageStatus =
@@ -1518,15 +1524,15 @@ function CarrierPackageCard({
           ) : dsSatisfied ? (
             <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-[12px] text-foreground">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-              Attached — {dsRecord?.declinationsOnFile}/{dsRecord?.requiredDeclinations}{" "}
-              declinations on file, evidence sufficient.
+              Attached — {dsState?.declinationsOnFile}/{dsState?.requiredDeclinations} declinations
+              on file, evidence sufficient.
             </div>
           ) : (
             <div className="flex items-start justify-between gap-2 rounded-lg border border-warn/30 bg-warn/5 p-3 text-[12px] text-foreground">
               <span className="flex items-start gap-2">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-                Not attached — {dsRecord?.declinationsOnFile ?? 0}/
-                {dsRecord?.requiredDeclinations ?? "?"} declinations on file.
+                Not attached — {dsState?.declinationsOnFile ?? 0}/
+                {dsState?.requiredDeclinations ?? "?"} declinations on file.
               </span>
               <Link
                 to="/app/workflows/$slug"
@@ -4716,16 +4722,47 @@ export function RenewalRemarketing() {
    8. Diligent Search & Compliance Documentation
    ============================================================ */
 
+const STATUS_PRIORITY: DiligentSearchStateDetail["status"][] = [
+  "Gathering evidence",
+  "Ready to file",
+  "Filed",
+  "Exempt",
+];
+
+// Worst-of-states summary for the queue chip — derived, not stored twice.
+function overallStatus(record: DiligentSearchRecord): DiligentSearchStateDetail["status"] {
+  return record.states.reduce(
+    (worst, s) =>
+      STATUS_PRIORITY.indexOf(s.status) < STATUS_PRIORITY.indexOf(worst) ? s.status : worst,
+    "Exempt" as DiligentSearchStateDetail["status"],
+  );
+}
+
+function stateSatisfied(s: DiligentSearchStateDetail) {
+  return s.requirementStatus !== "Required" || s.evidenceSufficient;
+}
+
 export function DiligentSearchCompliance() {
   const [sel, setSel] = useState(diligentSearch[0].id);
   const d = diligentSearch.find((x) => x.id === sel)!;
-  const canGenerate = d.status === "Exempt" || d.evidenceSufficient;
+  const [selState, setSelState] = useState<string | null>(null);
+  const [escalated, setEscalated] = useState<Record<string, boolean>>({});
+
+  const activeStateName =
+    selState && d.states.some((s) => s.state === selState) ? selState : d.states[0].state;
+  const state = d.states.find((s) => s.state === activeStateName)!;
+  const escalationKey = `${d.id}-${state.state}`;
+  const isEscalated = escalated[escalationKey] ?? state.escalation?.escalated ?? false;
+
+  const unsatisfiedStates = d.states.filter((s) => !stateSatisfied(s));
+  const canGenerate = unsatisfiedStates.length === 0;
+
   return (
     <div className="mx-auto max-w-[1500px]">
       <PageHeader
         eyebrow="Workflow 08"
         title="Diligent Search & Compliance Documentation"
-        description="Per-state diligent-search requirements, declination evidence sufficiency, and compliant surplus-lines documentation — gated so nothing generates on incomplete evidence."
+        description="Per-state diligent-search requirements, declination evidence sufficiency, and compliant surplus-lines documentation — gated so nothing generates on incomplete evidence. Submissions enter this workflow from Submission Market Matching's MM-07 diligent-search flag — fully processed here, not just logged upstream."
         actions={
           <Button variant="primary" disabled={!canGenerate}>
             <FileSearch className="h-4 w-4" />
@@ -4749,34 +4786,47 @@ export function DiligentSearchCompliance() {
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         <Panel title="Diligent search queue">
           <ul className="divide-y divide-border">
-            {diligentSearch.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => setSel(r.id)}
-                className={`w-full py-3 text-left ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
-              >
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{r.insured}</span>
-                  <span className="text-[11px] text-muted-foreground">{r.state}</span>
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {r.id} · {r.declinationsOnFile} of {r.requiredDeclinations} declinations on file
-                </div>
-                <div className="mt-1">
-                  <Chip
-                    tone={
-                      r.status === "Filed" || r.status === "Exempt"
-                        ? "success"
-                        : r.status === "Ready to file"
-                          ? "accent"
-                          : "warn"
-                    }
-                  >
-                    {r.status}
-                  </Chip>
-                </div>
-              </button>
-            ))}
+            {diligentSearch.map((r) => {
+              const rStatus = overallStatus(r);
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => {
+                    setSel(r.id);
+                    setSelState(null);
+                  }}
+                  className={`w-full py-3 text-left ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
+                >
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium">{r.insured}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {r.states.length > 1
+                        ? `${r.states[0].state} +${r.states.length - 1} more`
+                        : r.states[0].state}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {r.id} ·{" "}
+                    {r.states.length > 1
+                      ? `${r.states.filter(stateSatisfied).length} of ${r.states.length} states clear`
+                      : `${r.states[0].declinationsOnFile} of ${r.states[0].requiredDeclinations} declinations on file`}
+                  </div>
+                  <div className="mt-1">
+                    <Chip
+                      tone={
+                        rStatus === "Filed" || rStatus === "Exempt"
+                          ? "success"
+                          : rStatus === "Ready to file"
+                            ? "accent"
+                            : "warn"
+                      }
+                    >
+                      {rStatus}
+                    </Chip>
+                  </div>
+                </button>
+              );
+            })}
           </ul>
         </Panel>
 
@@ -4785,46 +4835,91 @@ export function DiligentSearchCompliance() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-[11px] font-mono text-muted-foreground">
-                  {d.id} · {d.state}
+                  {d.id} · {d.states.length} state{d.states.length > 1 ? "s" : ""}
                 </div>
                 <h2 className="mt-1 font-serif text-2xl">{d.insured}</h2>
               </div>
               <Chip
                 tone={
-                  d.status === "Filed" || d.status === "Exempt"
+                  overallStatus(d) === "Filed" || overallStatus(d) === "Exempt"
                     ? "success"
-                    : d.status === "Ready to file"
+                    : overallStatus(d) === "Ready to file"
                       ? "accent"
                       : "warn"
                 }
               >
-                {d.status}
+                {overallStatus(d)}
               </Chip>
             </div>
           </Panel>
 
-          <Panel title="Per-state requirement" actions={<FoundationBadge kind="matching" />}>
-            {d.status === "Exempt" ? (
+          <Panel
+            title="Per-state breakdown (DS-01 / DS-02)"
+            actions={<FoundationBadge kind="matching" />}
+          >
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {d.states.map((s) => (
+                <li key={s.state}>
+                  <button
+                    onClick={() => setSelState(s.state)}
+                    className={`flex w-full items-start justify-between gap-3 p-3 text-left text-sm ${s.state === activeStateName ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
+                  >
+                    <div>
+                      <div className="font-medium">{s.state}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {s.requirementStatus === "Required"
+                          ? `Requires ${s.requiredDeclinations} declinations (DS-01)`
+                          : s.requirementStatus === "Export-list eligible"
+                            ? "Export-list eligible — no declinations needed (DS-02)"
+                            : "Not required for this class/TIV (DS-01)"}
+                      </div>
+                    </div>
+                    <Chip
+                      tone={
+                        s.status === "Filed" || s.status === "Exempt"
+                          ? "success"
+                          : s.status === "Ready to file"
+                            ? "accent"
+                            : "warn"
+                      }
+                    >
+                      {s.status}
+                    </Chip>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+
+          <Panel
+            title={`${state.state} requirement`}
+            subtitle={
+              d.states.length > 1 ? "Selected state — click another above to switch" : undefined
+            }
+          >
+            {state.requirementStatus !== "Required" ? (
               <p className="text-sm text-foreground">
-                {d.state} does not require diligent-search documentation for this class of business
-                at this TIV — confirmed exempt against the current per-state requirement reference.
-                No declinations needed.
+                {state.requirementStatus === "Export-list eligible"
+                  ? `${state.state} allows this class onto its export list — pre-approved for non-admitted placement without a declination search (DS-02).`
+                  : `${state.state} does not require diligent-search documentation for this class of business at this TIV — confirmed not required against the current per-state requirement reference (DS-01).`}
               </p>
             ) : (
               <p className="text-sm text-foreground">
-                {d.state} requires <b>{d.requiredDeclinations} declinations</b> from admitted
-                markets before this risk can be placed non-admitted. {d.declinationsOnFile} of{" "}
-                {d.requiredDeclinations} are on file with sufficient written evidence.
+                {state.state} requires <b>{state.requiredDeclinations} declinations</b> from
+                admitted markets before this risk can be placed non-admitted (DS-01).{" "}
+                {state.declinationsOnFile} of {state.requiredDeclinations} are on file with
+                sufficient written evidence.
               </p>
             )}
           </Panel>
 
-          {d.status !== "Exempt" && (
+          {state.requirementStatus === "Required" && (
             <Panel title="Declination evidence tracker">
               <ul className="divide-y divide-border rounded-lg border border-border">
-                {Array.from({ length: d.requiredDeclinations }).map((_, i) => {
-                  const has = i < d.declinationsOnFile;
-                  const sufficient = has && (d.evidenceSufficient || i < d.declinationsOnFile - 1);
+                {Array.from({ length: state.requiredDeclinations }).map((_, i) => {
+                  const has = i < state.declinationsOnFile;
+                  const sufficient =
+                    has && (state.evidenceSufficient || i < state.declinationsOnFile - 1);
                   return (
                     <li key={i} className="flex items-start gap-3 p-3 text-sm">
                       {has ? (
@@ -4842,7 +4937,7 @@ export function DiligentSearchCompliance() {
                           {has
                             ? sufficient
                               ? "Written evidence on file — sufficient"
-                              : "On file but evidence insufficient — needs a dated written declination, not a verbal note"
+                              : "On file but evidence insufficient — see missing evidence detail below"
                             : "Not yet received"}
                         </div>
                       </div>
@@ -4857,6 +4952,70 @@ export function DiligentSearchCompliance() {
               </ul>
             </Panel>
           )}
+
+          {state.missingDeclinations.length > 0 && (
+            <Panel title="Missing evidence detail">
+              <ul className="space-y-3">
+                {state.missingDeclinations.map((md) => (
+                  <li
+                    key={md.market}
+                    className="rounded-lg border-2 border-warn/40 bg-warn/5 p-3 text-sm"
+                  >
+                    <div className="flex items-center gap-2 font-medium text-warn">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      {md.market}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      <b>What's wrong:</b> {md.issue}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      <b>Needed to satisfy {state.state}'s minimum:</b> {md.neededEvidence}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {state.escalation && (
+                <div className="mt-3 rounded-lg border border-border p-3 text-sm">
+                  <div className="flex items-center gap-2 font-medium">
+                    <Gavel className="h-4 w-4 shrink-0 text-accent" />
+                    Ambiguous determination
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{state.escalation.reason}</p>
+                  {isEscalated ? (
+                    <div className="mt-2">
+                      <Chip tone="accent">Escalated to compliance — awaiting legal review</Chip>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      className="mt-2 !py-1 !text-xs"
+                      onClick={() => setEscalated((prev) => ({ ...prev, [escalationKey]: true }))}
+                    >
+                      <Gavel className="h-3.5 w-3.5" />
+                      Escalate to compliance
+                    </Button>
+                  )}
+                </div>
+              )}
+            </Panel>
+          )}
+
+          <Panel
+            title="Record retention (DS-05)"
+            subtitle="Illustrative reference — verify against current state statute text"
+          >
+            <div className="flex items-start gap-2 rounded-lg border border-border p-3 text-sm">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <div>
+                <div className="font-medium">{state.retention.period}</div>
+                <div className="text-[11px] text-muted-foreground">{state.retention.rule}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  The final record (or exemption determination) for {state.state} is retained
+                  accordingly once filed or confirmed exempt.
+                </div>
+              </div>
+            </div>
+          </Panel>
 
           <Panel title="Compliant documentation">
             {canGenerate ? (
@@ -4882,9 +5041,18 @@ export function DiligentSearchCompliance() {
                   <div className="font-serif text-lg">Generation blocked</div>
                 </div>
                 <p className="mt-2 text-sm">
-                  Evidence is insufficient for at least one required declination. Chase the
-                  outstanding market(s) before documentation can be generated — this gate cannot be
-                  overridden from this screen.
+                  {unsatisfiedStates.map((s) => s.state).join(", ")} still{" "}
+                  {unsatisfiedStates.length > 1 ? "need" : "needs"} sufficient evidence before
+                  documentation can be generated
+                  {d.states.length > unsatisfiedStates.length
+                    ? ` — ${d.states
+                        .filter(stateSatisfied)
+                        .map((s) => s.state)
+                        .join(
+                          ", ",
+                        )} ${d.states.filter(stateSatisfied).length > 1 ? "are" : "is"} already clear`
+                    : ""}
+                  . This gate cannot be overridden from this screen.
                 </p>
               </div>
             )}

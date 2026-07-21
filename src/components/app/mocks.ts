@@ -1133,52 +1133,131 @@ export const remarketing: Remarket[] = [
   },
 ];
 
-export type DiligentSearchRecord = {
-  id: string;
-  insured: string;
+export type MissingDeclination = { market: string; issue: string; neededEvidence: string };
+
+export type DiligentSearchStateDetail = {
   state: string;
+  requirementStatus: "Required" | "Export-list eligible" | "Not required";
   requiredDeclinations: number;
   declinationsOnFile: number;
   evidenceSufficient: boolean;
+  missingDeclinations: MissingDeclination[];
+  escalation: { escalated: boolean; reason: string } | null;
+  retention: { period: string; rule: string };
   status: "Gathering evidence" | "Ready to file" | "Filed" | "Exempt";
+};
+
+export type DiligentSearchRecord = {
+  id: string;
+  insured: string;
+  states: DiligentSearchStateDetail[];
 };
 
 export const diligentSearch: DiligentSearchRecord[] = [
   {
     id: "DS-3301",
     insured: "Palmetto Cold Storage LLC",
-    state: "FL",
-    requiredDeclinations: 3,
-    declinationsOnFile: 3,
-    evidenceSufficient: true,
-    status: "Ready to file",
+    states: [
+      {
+        state: "FL",
+        requirementStatus: "Required",
+        requiredDeclinations: 3,
+        declinationsOnFile: 3,
+        evidenceSufficient: true,
+        missingDeclinations: [],
+        escalation: null,
+        retention: {
+          period: "5 years from placement effective date",
+          rule: "FL Surplus Lines Law — 5-year retention for diligent-search documentation (illustrative reference)",
+        },
+        status: "Ready to file",
+      },
+    ],
   },
   {
     id: "DS-3300",
     insured: "Highline Hospitality Group",
-    state: "NV",
-    requiredDeclinations: 3,
-    declinationsOnFile: 2,
-    evidenceSufficient: false,
-    status: "Gathering evidence",
+    states: [
+      {
+        state: "NV",
+        requirementStatus: "Required",
+        requiredDeclinations: 3,
+        declinationsOnFile: 2,
+        evidenceSufficient: false,
+        missingDeclinations: [
+          {
+            market: "Ategrity Specialty",
+            issue: "Declination received verbally on a call — no written follow-up on file",
+            neededEvidence:
+              "A signed or emailed written declination stating carrier and reason, dated",
+          },
+        ],
+        escalation: {
+          escalated: false,
+          reason:
+            "Ategrity's verbal response reads as a conditional counter, not a clear decline — compliance/legal input needed on whether a written follow-up would resolve this or if it needs a fresh submission.",
+        },
+        retention: {
+          period: "5 years from placement effective date",
+          rule: "NV Revised Statutes 685A — 5-year retention for declination evidence (illustrative reference)",
+        },
+        status: "Gathering evidence",
+      },
+      {
+        state: "CA",
+        requirementStatus: "Export-list eligible",
+        requiredDeclinations: 0,
+        declinationsOnFile: 0,
+        evidenceSufficient: true,
+        missingDeclinations: [],
+        escalation: null,
+        retention: {
+          period: "5 years from exemption determination",
+          rule: "CA Ins. Code export list — 5-year retention for the eligibility determination (illustrative reference)",
+        },
+        status: "Exempt",
+      },
+    ],
   },
   {
     id: "DS-3299",
     insured: "Ridgeline Contractors, Inc.",
-    state: "CO",
-    requiredDeclinations: 1,
-    declinationsOnFile: 1,
-    evidenceSufficient: true,
-    status: "Filed",
+    states: [
+      {
+        state: "CO",
+        requirementStatus: "Required",
+        requiredDeclinations: 1,
+        declinationsOnFile: 1,
+        evidenceSufficient: true,
+        missingDeclinations: [],
+        escalation: null,
+        retention: {
+          period: "3 years from filing",
+          rule: "Colorado surplus lines rule — 3-year retention for the filed affidavit (illustrative reference)",
+        },
+        status: "Filed",
+      },
+    ],
   },
   {
     id: "DS-3298",
     insured: "Bayou Marine Services",
-    state: "LA",
-    requiredDeclinations: 0,
-    declinationsOnFile: 0,
-    evidenceSufficient: true,
-    status: "Exempt",
+    states: [
+      {
+        state: "LA",
+        requirementStatus: "Not required",
+        requiredDeclinations: 0,
+        declinationsOnFile: 0,
+        evidenceSufficient: true,
+        missingDeclinations: [],
+        escalation: null,
+        retention: {
+          period: "5 years from exemption determination",
+          rule: "Louisiana surplus lines exemption — 5-year retention for the determination record (illustrative reference)",
+        },
+        status: "Exempt",
+      },
+    ],
   },
 ];
 

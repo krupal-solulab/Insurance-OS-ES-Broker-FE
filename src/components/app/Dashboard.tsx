@@ -281,9 +281,9 @@ export function Dashboard() {
               <div>
                 <div className="font-medium">Diligent search evidence needed</div>
                 <div className="text-[11px] text-muted-foreground">
-                  {diligentSearch[1].insured} · {diligentSearch[1].state} —{" "}
-                  {diligentSearch[1].declinationsOnFile} of {diligentSearch[1].requiredDeclinations}{" "}
-                  declinations sufficient
+                  {diligentSearch[1].insured} · {diligentSearch[1].states[0].state} —{" "}
+                  {diligentSearch[1].states[0].declinationsOnFile} of{" "}
+                  {diligentSearch[1].states[0].requiredDeclinations} declinations sufficient
                 </div>
               </div>
             </li>
