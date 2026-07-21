@@ -5067,7 +5067,26 @@ export function DiligentSearchCompliance() {
    9. Carrier Appetite Intelligence Tracking
    ============================================================ */
 
+const APPETITE_BATCH_RUN = {
+  lastRunAt: "Feb 03, 2026 · 06:00 ET",
+  nextRunAt: "Feb 04, 2026 · 06:00 ET",
+  cadence: "Daily batch",
+};
+
 export function CarrierAppetiteIntelligence() {
+  const navigate = useNavigate();
+  const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
+  const [handedOff, setHandedOff] = useState<Record<string, boolean>>({});
+
+  function dismiss(id: string) {
+    setDismissed((prev) => ({ ...prev, [id]: true }));
+  }
+
+  function approveAndHandOff(id: string) {
+    setHandedOff((prev) => ({ ...prev, [id]: true }));
+    navigate({ to: "/app/workflows/$slug", params: { slug: "submission-matching" } });
+  }
+
   return (
     <div className="mx-auto max-w-[1500px]">
       <PageHeader
@@ -5091,6 +5110,12 @@ export function CarrierAppetiteIntelligence() {
             carrier fit score and last-signal date. Treat that as binding, not a starting point to
             expand from.
           </div>
+          <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <Clock className="h-3 w-3 shrink-0" />
+            {APPETITE_BATCH_RUN.cadence} — not real-time. Aggregates QC-03 and RR-08 signals logged
+            since the last run. Last run {APPETITE_BATCH_RUN.lastRunAt} · next run{" "}
+            {APPETITE_BATCH_RUN.nextRunAt}.
+          </div>
         </div>
       </div>
 
@@ -5104,58 +5129,79 @@ export function CarrierAppetiteIntelligence() {
       <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <Panel title="Appetite signal review queue" actions={<FoundationBadge kind="matching" />}>
           <ul className="divide-y divide-border">
-            {appetiteSignals.map((s) => (
-              <li key={s.id} className="py-3 text-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{s.carrier}</span>
-                      <Chip tone={s.scope === "Class-level" ? "accent" : "neutral"}>{s.scope}</Chip>
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">{s.classOrAccount}</div>
-                    <div className="mt-1 flex items-center gap-1.5">
-                      {s.signal.includes("expanding") ? (
-                        <TrendingUp className="h-3.5 w-3.5 text-success" />
-                      ) : s.signal.includes("tightening") ? (
-                        <TrendingDown className="h-3.5 w-3.5 text-destructive" />
-                      ) : (
-                        <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                      <span>{s.signal}</span>
-                    </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      Evidence: {s.evidence}
-                    </div>
-                    <div className="mt-1 text-[11px]">
-                      <b>Suggested:</b> {s.suggestedAction}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-2">
-                    <Chip
-                      tone={
-                        s.status === "Approved"
-                          ? "success"
-                          : s.status === "Dismissed"
-                            ? "danger"
-                            : "warn"
-                      }
-                    >
-                      {s.status}
-                    </Chip>
-                    {s.status === "Pending review" && (
-                      <div className="flex gap-1">
-                        <Button variant="secondary" className="!py-1 !text-xs">
-                          Dismiss
-                        </Button>
-                        <Button variant="primary" className="!py-1 !text-xs">
-                          Approve
-                        </Button>
+            {appetiteSignals.map((s) => {
+              const status = dismissed[s.id] ? "Dismissed" : s.status;
+              return (
+                <li key={s.id} className="py-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{s.carrier}</span>
+                        <Chip tone={s.scope === "Class-level" ? "accent" : "neutral"}>
+                          {s.scope}
+                        </Chip>
                       </div>
-                    )}
+                      <div className="text-[11px] text-muted-foreground">{s.classOrAccount}</div>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        {s.signal.includes("expanding") ? (
+                          <TrendingUp className="h-3.5 w-3.5 text-success" />
+                        ) : s.signal.includes("tightening") ? (
+                          <TrendingDown className="h-3.5 w-3.5 text-destructive" />
+                        ) : (
+                          <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                        <span>{s.signal}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        Evidence: {s.evidence}
+                      </div>
+                      <div className="mt-1 text-[11px]">
+                        <b>Suggested:</b> {s.suggestedAction}
+                      </div>
+                      {handedOff[s.id] && !dismissed[s.id] && (
+                        <div className="mt-1 flex items-center gap-1.5 text-[11px] text-accent">
+                          <ArrowRight className="h-3 w-3 shrink-0" />
+                          Routed to Submission Market Matching (Match Rules) — apply the change
+                          there. This page never edits the profile directly.
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <Chip
+                        tone={
+                          status === "Approved"
+                            ? "success"
+                            : status === "Dismissed"
+                              ? "danger"
+                              : "warn"
+                        }
+                      >
+                        {status}
+                      </Chip>
+                      {status === "Pending review" && (
+                        <div className="flex gap-1">
+                          <Button
+                            variant="secondary"
+                            className="!py-1 !text-xs"
+                            onClick={() => dismiss(s.id)}
+                          >
+                            Dismiss
+                          </Button>
+                          <Button
+                            variant="primary"
+                            className="!py-1 !text-xs"
+                            onClick={() => approveAndHandOff(s.id)}
+                            title="Routes to the Carrier Appetite Profile interface in Submission Market Matching — no edit happens here"
+                          >
+                            Approve → apply in profile
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         </Panel>
         <Panel
