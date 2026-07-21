@@ -38,7 +38,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { simulateRequest } from "@/lib/simulate";
 import { PageHeader } from "./AppShell";
 import {
-  matchRules,
   carrierPerformance,
   retailAgents,
   decisionsLog,
@@ -338,11 +337,33 @@ export function SubmissionMarketMatching() {
   const s = submissions.find((x) => x.id === selected)!;
   const [tab, setTab] = useState("Documents");
   const [selectedCarriers, setSelectedCarriers] = useState<string[]>(RECOMMENDED_CARRIERS);
+  const [log, setLog] = useState<LogEntry[]>(() => [
+    {
+      at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      who: "AI (Matching/Ranking Core)",
+      what: `Ranked shortlist produced — ${submissionMarkets.filter((m) => m.fit !== "Out of appetite").length} of ${submissionMarkets.length} carriers in appetite`,
+      ctx: `${s.id} · ${s.insured}`,
+      conf: "94%",
+    },
+  ]);
 
   function toggleCarrier(carrier: string) {
     setSelectedCarriers((prev) =>
       prev.includes(carrier) ? prev.filter((c) => c !== carrier) : [...prev, carrier],
     );
+  }
+
+  function appendLog(who: string, what: string, ctx: string, conf = "—") {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf,
+      },
+      ...prev,
+    ]);
   }
 
   return (
@@ -458,13 +479,18 @@ export function SubmissionMarketMatching() {
                       ? "Select at least one carrier in Carrier ranking first"
                       : undefined
                   }
-                  onClick={() =>
+                  onClick={() => {
+                    appendLog(
+                      "Sam D. (Broker)",
+                      `Selected ${selectedCarriers.length} carrier${selectedCarriers.length === 1 ? "" : "s"} for packaging — ${selectedCarriers.join(", ")}`,
+                      `${s.id} · proceeding to Package Assembly`,
+                    );
                     navigate({
                       to: "/app/workflows/$slug",
                       params: { slug: "package-assembly" },
                       search: { submissionId: s.id, carriers: selectedCarriers.join(",") },
-                    })
-                  }
+                    });
+                  }}
                 >
                   Proceed to package
                   {selectedCarriers.length > 0 ? ` (${selectedCarriers.length})` : ""}{" "}
@@ -536,9 +562,15 @@ export function SubmissionMarketMatching() {
                   insured={s.insured}
                 />
               )}
-              {tab === "Match rules" && <MatchRulesTab />}
-              {tab === "AI recommendation" && <MatchRecommendationTab />}
-              {tab === "Activity" && <ActivityTab />}
+              {tab === "Match rules" && <MatchRulesTab insured={s.insured} />}
+              {tab === "AI recommendation" && (
+                <MatchRecommendationTab
+                  selected={selectedCarriers}
+                  onToggle={toggleCarrier}
+                  onLog={appendLog}
+                />
+              )}
+              {tab === "Activity" && <ActivityTab log={log} onLog={appendLog} submission={s} />}
             </div>
           </Panel>
         </div>
@@ -708,6 +740,15 @@ function CarrierRankingTab({
                   <span>Est. premium: {m.estPremium}</span>
                   <span>Turnaround: {m.turnaround}</span>
                 </div>
+                <div className="mt-2 text-[11px]">
+                  {m.reasoningSource ? (
+                    <SourceCitation doc={m.reasoningSource.doc} page={m.reasoningSource.page}>
+                      {m.reasoning}
+                    </SourceCitation>
+                  ) : (
+                    <span className="text-muted-foreground">{m.reasoning}</span>
+                  )}
+                </div>
                 {m.missingInfo.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {m.missingInfo.map((mi) => (
@@ -807,36 +848,158 @@ function CarrierRankingTab({
   );
 }
 
-function MatchRulesTab() {
+function MatchRulesTab({ insured }: { insured: string }) {
+  const [carrier, setCarrier] = useState(submissionMarkets[0].carrier);
+  const m = submissionMarkets.find((x) => x.carrier === carrier)!;
+  const dsRecord = diligentSearch.find((d) => d.insured === insured);
+  const hardPassed = m.hardExclusions.every((h) => h.pass);
+  const scoreSum = m.softScoreFactors.reduce((sum, f) => sum + f.points, 0);
+
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <div className="text-xs font-medium">
-          Match rules · top carrier (Kinsale Insurance) · 5 of 6 pass
-        </div>
+        <div className="text-xs font-medium">Matching engine · 3 passes, per carrier</div>
         <FoundationBadge kind="matching" />
       </div>
-      <ul className="divide-y divide-border rounded-lg border border-border">
-        {matchRules.map((r) => (
-          <li key={r.rule} className="flex items-start gap-3 p-3 text-sm">
-            {r.pass ? (
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-            ) : (
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-            )}
-            <div className="flex-1">
-              <div className="font-medium">{r.rule}</div>
-              <div className="text-[11px] text-muted-foreground">{r.detail}</div>
-            </div>
-            <Chip tone={r.pass ? "success" : "warn"}>{r.pass ? "Pass" : "Review"}</Chip>
-          </li>
+
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {submissionMarkets.map((mk) => (
+          <button
+            key={mk.carrier}
+            onClick={() => setCarrier(mk.carrier)}
+            className={`rounded-full border px-3 py-1 text-xs transition ${
+              carrier === mk.carrier
+                ? "border-foreground bg-foreground text-background"
+                : "border-border bg-background hover:bg-secondary"
+            }`}
+          >
+            {mk.carrier}
+          </button>
         ))}
-      </ul>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Pass A · Hard exclusion — class code, state licensing, premium band
+          </div>
+          <ul className="divide-y divide-border rounded-lg border border-border">
+            {m.hardExclusions.map((h) => (
+              <li key={h.label} className="flex items-start gap-3 p-3 text-sm">
+                {h.pass ? (
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                ) : (
+                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                )}
+                <div className="flex-1">
+                  <div className="font-medium">{h.label}</div>
+                  <div className="text-[11px] text-muted-foreground">{h.detail}</div>
+                </div>
+                <Chip tone={h.pass ? "success" : "danger"}>{h.pass ? "Pass" : "Excluded"}</Chip>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Pass B · Soft scoring — severity margin, completeness, hit rate, appetite confidence
+          </div>
+          {!hardPassed ? (
+            <div className="flex items-start gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              Not run — {m.carrier} was excluded at the hard-exclusion pass above, so soft scoring
+              never started.
+            </div>
+          ) : (
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {m.softScoreFactors.map((f) => (
+                <li key={f.label} className="flex items-start gap-3 p-3 text-sm">
+                  <div className="flex-1">
+                    <div className="font-medium">{f.label}</div>
+                    <div className="text-[11px] text-muted-foreground">{f.detail}</div>
+                  </div>
+                  <span className="font-mono text-xs text-success">+{f.points}</span>
+                </li>
+              ))}
+              <li className="flex items-center justify-between p-3 text-sm">
+                <span className="font-medium">Fit score</span>
+                <span className="font-mono text-sm">
+                  {scoreSum} <span className="text-muted-foreground">= {m.score}</span>
+                </span>
+              </li>
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Pass C · Diligent-search compliance — independent of ranking outcome
+          </div>
+          {!m.diligentSearchRequired ? (
+            <div className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
+              Not required for this carrier's paper.
+            </div>
+          ) : dsRecord?.evidenceSufficient || dsRecord?.status === "Exempt" ? (
+            <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-foreground">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+              <div>
+                {dsRecord.status === "Exempt"
+                  ? "Exempt for this state/class."
+                  : `Satisfied — ${dsRecord.declinationsOnFile}/${dsRecord.requiredDeclinations} declinations on file with sufficient evidence.`}
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  This is checked independently and does not affect the fit score above — a carrier
+                  can be a strong fit while diligent search is still pending.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-foreground">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+              <div>
+                {dsRecord
+                  ? `Not yet satisfied — ${dsRecord.declinationsOnFile}/${dsRecord.requiredDeclinations} declinations on file.`
+                  : "Status unknown."}
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  This is checked independently and does not affect the fit score above.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function MatchRecommendationTab() {
+function MatchRecommendationTab({
+  selected,
+  onToggle,
+  onLog,
+}: {
+  selected: string[];
+  onToggle: (carrier: string) => void;
+  onLog: (who: string, what: string, ctx: string, conf?: string) => void;
+}) {
+  const [overrideCarrier, setOverrideCarrier] = useState("");
+  const [overrideNote, setOverrideNote] = useState("");
+  const [overrideConfirmed, setOverrideConfirmed] = useState(false);
+  const overridable = submissionMarkets.filter((m) => m.fit !== "Out of appetite");
+
+  function confirmOverride() {
+    if (!overrideCarrier || !overrideNote.trim()) return;
+    if (!selected.includes(overrideCarrier)) onToggle(overrideCarrier);
+    onLog(
+      "Sam D. (Broker)",
+      `Override — selected ${overrideCarrier} ahead of the AI ranking`,
+      `Rationale: "${overrideNote.trim()}"`,
+    );
+    setOverrideConfirmed(true);
+    setOverrideCarrier("");
+    setOverrideNote("");
+    setTimeout(() => setOverrideConfirmed(false), 2500);
+  }
+
   return (
     <div className="grid gap-4 md:grid-cols-3">
       <div className="rounded-xl border-2 border-success/40 bg-success/5 p-4 md:col-span-2">
@@ -863,22 +1026,105 @@ function MatchRecommendationTab() {
             sprinkler inspection, confirmation of continuous refrigeration monitoring.
           </div>
         </div>
+
+        <div className="mt-5 rounded-lg border border-dashed border-border bg-background p-3">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Override ranking — broker judgment overrules the AI
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Select any carrier from the panel, including one the AI ranked lower, and explain why.
+            This adds the carrier to your packaging selection and is written to the activity log.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <select
+              value={overrideCarrier}
+              onChange={(e) => setOverrideCarrier(e.target.value)}
+              className="rounded-lg border border-border bg-background p-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring sm:w-56"
+            >
+              <option value="">Select a carrier…</option>
+              {overridable.map((m) => (
+                <option key={m.carrier} value={m.carrier}>
+                  {m.carrier} · fit {m.score}
+                </option>
+              ))}
+            </select>
+            <textarea
+              value={overrideNote}
+              onChange={(e) => setOverrideNote(e.target.value)}
+              placeholder="Required — why override the AI ranking? (e.g. broker relationship, capacity need, timing)"
+              rows={1}
+              className="flex-1 resize-none rounded-lg border border-border bg-background p-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              variant="secondary"
+              disabled={!overrideCarrier || !overrideNote.trim()}
+              title={
+                !overrideCarrier || !overrideNote.trim()
+                  ? "Select a carrier and add a rationale note first"
+                  : undefined
+              }
+              onClick={confirmOverride}
+            >
+              Confirm override
+            </Button>
+            {overrideConfirmed && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-success">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Logged to Activity
+              </span>
+            )}
+          </div>
+        </div>
       </div>
       <div className="rounded-xl border border-border p-4">
         <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           Broker decision
         </div>
         <div className="mt-3 space-y-2 text-sm">
-          <Button variant="primary" className="w-full justify-center">
+          <Button
+            variant="primary"
+            className="w-full justify-center"
+            onClick={() =>
+              onLog(
+                "Sam D. (Broker)",
+                "Approved AI recommendation — proceed to market",
+                "SUB-24019 · Palmetto Cold Storage",
+              )
+            }
+          >
             Approve recommendation
           </Button>
-          <Button variant="secondary" className="w-full justify-center">
+          <Button
+            variant="secondary"
+            className="w-full justify-center"
+            onClick={() =>
+              onLog(
+                "Sam D. (Broker)",
+                "Requested changes to carrier selection",
+                "SUB-24019 · Palmetto Cold Storage",
+              )
+            }
+          >
             Modify carrier selection
           </Button>
-          <Button variant="secondary" className="w-full justify-center">
+          <Button
+            variant="secondary"
+            className="w-full justify-center"
+            onClick={() =>
+              onLog("Sam D. (Broker)", "Sent to peer review", "SUB-24019 · Palmetto Cold Storage")
+            }
+          >
             Send to peer review
           </Button>
-          <Button variant="danger" className="w-full justify-center">
+          <Button
+            variant="danger"
+            className="w-full justify-center"
+            onClick={() =>
+              onLog("Sam D. (Broker)", "Override — no market", "SUB-24019 · Palmetto Cold Storage")
+            }
+          >
             Override — no market
           </Button>
         </div>
@@ -890,22 +1136,79 @@ function MatchRecommendationTab() {
   );
 }
 
-function ActivityTab() {
+function ActivityTab({
+  log,
+  onLog,
+  submission,
+}: {
+  log: LogEntry[];
+  onLog: (who: string, what: string, ctx: string, conf?: string) => void;
+  submission: Submission;
+}) {
+  const [outcomeLogged, setOutcomeLogged] = useState(false);
+
+  function recordOutcome(outcome: "Quoted" | "Bound" | "Declined") {
+    onLog(
+      "Sam D. (Broker)",
+      `Recorded eventual outcome — ${outcome}`,
+      `${submission.id} · ${submission.topMarket}`,
+    );
+    setOutcomeLogged(true);
+    setTimeout(() => setOutcomeLogged(false), 2500);
+  }
+
   return (
-    <ul className="divide-y divide-border">
-      {decisionsLog.slice(0, 5).map((d, i) => (
-        <li key={i} className="flex items-start gap-3 py-3 text-sm">
-          <span className="font-mono text-xs text-muted-foreground">{d.at}</span>
-          <div className="flex-1">
-            <div>
-              <b>{d.who}</b> — {d.what}
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-secondary/30 p-3">
+        <div className="text-[11px] text-muted-foreground">
+          Record the eventual outcome once it's known, so it's on the record alongside the shortlist
+          and the broker's selection.
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="secondary"
+            className="!py-1 !text-xs"
+            onClick={() => recordOutcome("Quoted")}
+          >
+            Quoted
+          </Button>
+          <Button
+            variant="secondary"
+            className="!py-1 !text-xs"
+            onClick={() => recordOutcome("Bound")}
+          >
+            Bound
+          </Button>
+          <Button
+            variant="secondary"
+            className="!py-1 !text-xs"
+            onClick={() => recordOutcome("Declined")}
+          >
+            Declined
+          </Button>
+          {outcomeLogged && <CheckCircle2 className="h-4 w-4 text-success" />}
+        </div>
+      </div>
+
+      <ul className="divide-y divide-border">
+        {log.slice(0, 10).map((d, i) => (
+          <li key={i} className="flex items-start gap-3 py-3 text-sm">
+            <span className="font-mono text-xs text-muted-foreground">{d.at}</span>
+            <div className="flex-1">
+              <div>
+                <b>{d.who}</b> — {d.what}
+              </div>
+              <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
             </div>
-            <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
-          </div>
-          {d.conf !== "—" && <Chip tone="neutral">{d.conf}</Chip>}
-        </li>
-      ))}
-    </ul>
+            {d.conf !== "—" && <Chip tone="neutral">{d.conf}</Chip>}
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3 text-[10px] text-muted-foreground">
+        This shortlist, selection, and outcome history is the foundation for Carrier Appetite
+        Intelligence (roadmap workflow #7) — v1 doesn't act on it yet, it's only logged here.
+      </div>
+    </div>
   );
 }
 
@@ -1059,6 +1362,11 @@ function CarrierPackageCard({
   const [regenerating, setRegenerating] = useState(false);
   const [regenError, setRegenError] = useState("");
   const [sentAt, setSentAt] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [lastLoggedLetter, setLastLoggedLetter] = useState(() =>
+    buildCoverLetter(market, submission),
+  );
+  const [outcome, setOutcome] = useState<"Quoted" | "Bound" | "Declined" | null>(null);
 
   const outstandingDocs = market.missingInfo.filter((d) => !receivedDocs.has(d));
   const manualFields = CARRIER_MANUAL_FIELDS[market.carrier] ?? [];
@@ -1081,6 +1389,24 @@ function CarrierPackageCard({
     onLog("Sam D. (Broker)", `Marked "${doc}" as received`, `${market.carrier} package`);
   }
 
+  function handleLetterBlur() {
+    if (coverLetter !== lastLoggedLetter) {
+      onLog("Sam D. (Broker)", "Edited cover letter", `${market.carrier} package`);
+      setLastLoggedLetter(coverLetter);
+      setConfirmed(false);
+    }
+  }
+
+  function confirmContents() {
+    setConfirmed(true);
+    onLog("Sam D. (Broker)", "Confirmed package contents", `${market.carrier} package`);
+  }
+
+  function recordOutcome(next: "Quoted" | "Bound" | "Declined") {
+    setOutcome(next);
+    onLog("Sam D. (Broker)", `Recorded eventual outcome — ${next}`, `${market.carrier} package`);
+  }
+
   async function regenerate() {
     setRegenerating(true);
     setRegenError("");
@@ -1089,6 +1415,8 @@ function CarrierPackageCard({
       // this only re-runs the same local template, it doesn't call an LLM.
       const next = await simulateRequest(buildCoverLetter(market, submission));
       setCoverLetter(next);
+      setLastLoggedLetter(next);
+      setConfirmed(false);
       onLog("AI (Matching/Ranking Core)", "Cover letter regenerated", `${market.carrier} package`);
     } catch (err) {
       setRegenError(err instanceof Error ? err.message : "Something went wrong.");
@@ -1265,6 +1593,7 @@ function CarrierPackageCard({
           rows={4}
           value={coverLetter}
           onChange={(e) => setCoverLetter(e.target.value)}
+          onBlur={handleLetterBlur}
           className="w-full resize-none rounded-lg border border-border bg-background p-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
         {regenError && (
@@ -1288,8 +1617,31 @@ function CarrierPackageCard({
         </div>
       </div>
 
+      {/* Broker review: confirm contents (step 5) is distinct from send (step 6) */}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background p-3">
+        <div className="text-[11px] text-muted-foreground">
+          {confirmed ? (
+            <span className="inline-flex items-center gap-1.5 text-success">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Package contents confirmed — ready to compile and send.
+            </span>
+          ) : (
+            "Review the completeness checklist, fields, and cover letter above, then confirm before sending."
+          )}
+        </div>
+        <Button
+          variant={confirmed ? "secondary" : "primary"}
+          disabled={status === "BLOCKED" || confirmed}
+          title={status === "BLOCKED" ? "Resolve the blocked items above first" : undefined}
+          onClick={confirmContents}
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {confirmed ? "Contents confirmed" : "Confirm package contents"}
+        </Button>
+      </div>
+
       {/* Send boundary — non-negotiable: assemble/draft only, broker sends manually */}
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-secondary/30 p-3">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-secondary/30 p-3">
         <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
           <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           Coverline drafts and assembles — you send it, by email or {market.carrier}'s portal.
@@ -1307,11 +1659,11 @@ function CarrierPackageCard({
             </Chip>
           ) : (
             <Button
-              variant={status === "BLOCKED" ? "secondary" : "primary"}
-              disabled={status === "BLOCKED"}
+              variant={confirmed ? "primary" : "secondary"}
+              disabled={!confirmed}
               title={
-                status === "BLOCKED"
-                  ? "Resolve the blocked items above first"
+                !confirmed
+                  ? "Confirm package contents first"
                   : "You confirm this was sent — nothing sends automatically"
               }
               onClick={markSent}
@@ -1321,6 +1673,36 @@ function CarrierPackageCard({
             </Button>
           )}
         </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-[11px]">
+        <span className="text-muted-foreground">Record eventual outcome:</span>
+        <Button
+          variant="ghost"
+          className="!py-1 !text-xs"
+          disabled={!sentAt}
+          onClick={() => recordOutcome("Quoted")}
+        >
+          Quoted
+        </Button>
+        <Button
+          variant="ghost"
+          className="!py-1 !text-xs"
+          disabled={!sentAt}
+          onClick={() => recordOutcome("Bound")}
+        >
+          Bound
+        </Button>
+        <Button
+          variant="ghost"
+          className="!py-1 !text-xs"
+          disabled={!sentAt}
+          onClick={() => recordOutcome("Declined")}
+        >
+          Declined
+        </Button>
+        {!sentAt && <span className="text-muted-foreground">(available once marked as sent)</span>}
+        {outcome && <Chip tone={outcome === "Declined" ? "danger" : "success"}>{outcome}</Chip>}
       </div>
     </Panel>
   );
@@ -1421,7 +1803,19 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
         <div className="space-y-4">
           {markets.map((m) => (
             <Panel key={m.carrier}>
-              <div className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <h3 className="font-serif text-xl">{m.carrier}</h3>
+                <Chip>Received</Chip>
+              </div>
+              <p className="mt-1 max-w-xl text-[12px] text-muted-foreground">{m.appetiteNotes}</p>
+              <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                <span>{m.requirements.length} requirements on record</span>
+                <span>
+                  Diligent search:{" "}
+                  {m.diligentSearchRequired ? "required for this paper" : "not required"}
+                </span>
+              </div>
+              <div className="mt-4 flex items-center gap-3 border-t border-border pt-3 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Running PA-01 through PA-06 for {m.carrier}…
               </div>

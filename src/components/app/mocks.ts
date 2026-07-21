@@ -227,6 +227,13 @@ export type Market = {
   formatPreference: string;
   /** Whether this carrier's paper requires diligent-search documentation for a non-admitted placement. */
   diligentSearchRequired: boolean;
+  /** Pass A of the matching engine — class code / state licensing / premium band. A failure here gates the carrier out before soft scoring runs. */
+  hardExclusions: { label: string; pass: boolean; detail: string }[];
+  /** Pass B of the matching engine — sub-factors whose points sum to `score`. Empty when Pass A failed (soft scoring never ran). */
+  softScoreFactors: { label: string; detail: string; points: number }[];
+  /** Grounded, cited reasoning shown inline in the ranked shortlist. */
+  reasoning: string;
+  reasoningSource?: { doc: string; page: number };
 };
 
 // Ranked carrier panel for SUB-24019 · Palmetto Cold Storage LLC
@@ -251,6 +258,48 @@ export const submissionMarkets: Market[] = [
       "Actively growing the cold-storage book — standard subjectivities only, no additional asks expected.",
     formatPreference: "ACORD 125/140 as signed PDF; SOV as Excel, not PDF.",
     diligentSearchRequired: true,
+    hardExclusions: [
+      {
+        label: "Class code",
+        pass: true,
+        detail: "Cold storage / refrigerated warehousing — actively sought class",
+      },
+      {
+        label: "State licensing",
+        pass: true,
+        detail: "Licensed excess & surplus lines carrier in FL",
+      },
+      {
+        label: "Premium band",
+        pass: true,
+        detail: "$182k–196k sits mid-band for Kinsale's cold-storage treaty ($50k–$500k)",
+      },
+    ],
+    softScoreFactors: [
+      {
+        label: "Severity margin",
+        detail: "38% 5yr loss ratio vs. Kinsale's 60% treaty threshold — wide margin",
+        points: 26,
+      },
+      {
+        label: "Submission completeness",
+        detail: "100% of Kinsale's requirements on file — no gaps",
+        points: 24,
+      },
+      {
+        label: "Historical hit rate",
+        detail: "42% hit rate on Kinsale's cold-storage book (carrier performance log)",
+        points: 22,
+      },
+      {
+        label: "Appetite confidence",
+        detail: "Class-level appetite signal trending positive this quarter",
+        points: 19,
+      },
+    ],
+    reasoning:
+      "Cold storage is an actively sought class per Kinsale's appetite guide; the 38% five-year loss ratio clears their 60% treaty threshold with room to spare.",
+    reasoningSource: { doc: "Loss_Run_5yr.pdf", page: 4 },
   },
   {
     carrier: "James River Insurance",
@@ -274,6 +323,48 @@ export const submissionMarkets: Market[] = [
     formatPreference:
       "Accepts ACORD 125/140 as PDF or their own supplemental app; SOV in either format.",
     diligentSearchRequired: true,
+    hardExclusions: [
+      {
+        label: "Class code",
+        pass: true,
+        detail: "Cold storage / refrigerated warehousing in appetite",
+      },
+      {
+        label: "State licensing",
+        pass: true,
+        detail: "Licensed excess & surplus lines carrier in FL",
+      },
+      {
+        label: "Premium band",
+        pass: true,
+        detail: "$178k–205k within James River's cold-storage band",
+      },
+    ],
+    softScoreFactors: [
+      {
+        label: "Severity margin",
+        detail: "38% 5yr loss ratio vs. their 55% threshold",
+        points: 23,
+      },
+      {
+        label: "Submission completeness",
+        detail: "5 of 6 requirements on file — sprinkler inspection still outstanding",
+        points: 17,
+      },
+      {
+        label: "Historical hit rate",
+        detail: "39% hit rate on James River's cold-storage book (carrier performance log)",
+        points: 22,
+      },
+      {
+        label: "Appetite confidence",
+        detail: "Strong class-level appetite signal, no recent declinations",
+        points: 22,
+      },
+    ],
+    reasoning:
+      "Strong class fit, but the sprinkler protection picture can't be fully corroborated until the updated inspection report is on file.",
+    reasoningSource: { doc: "Palmetto_SOV_2026.xlsx", page: 1 },
   },
   {
     carrier: "Ategrity Specialty",
@@ -298,6 +389,48 @@ export const submissionMarkets: Market[] = [
     formatPreference:
       "Requires their own supplemental form in addition to ACORD 125/140; loss run must be carrier-formatted, not a raw PDF export.",
     diligentSearchRequired: true,
+    hardExclusions: [
+      {
+        label: "Class code",
+        pass: true,
+        detail: "Cold storage permitted, but treated as a non-core class",
+      },
+      {
+        label: "State licensing",
+        pass: true,
+        detail: "Licensed excess & surplus lines carrier in FL",
+      },
+      {
+        label: "Premium band",
+        pass: true,
+        detail: "$195k–230k near the upper edge of Ategrity's typical cold-storage band",
+      },
+    ],
+    softScoreFactors: [
+      {
+        label: "Severity margin",
+        detail: "TIV concentration is larger than their typical cold-storage line — thinner margin",
+        points: 16,
+      },
+      {
+        label: "Submission completeness",
+        detail: "6 of 8 requirements on file — loss-run addendum and monitoring cert outstanding",
+        points: 12,
+      },
+      {
+        label: "Historical hit rate",
+        detail: "25% hit rate on Ategrity's cold-storage book (carrier performance log)",
+        points: 16,
+      },
+      {
+        label: "Appetite confidence",
+        detail: "Opportunistic rather than core appetite for this class",
+        points: 24,
+      },
+    ],
+    reasoning:
+      "Marginal — TIV concentration is larger than their typical cold-storage line, and they're waiting on loss-run and monitoring documentation before committing capacity.",
+    reasoningSource: { doc: "Palmetto_SOV_2026.xlsx", page: 1 },
   },
   {
     carrier: "Markel",
@@ -316,9 +449,43 @@ export const submissionMarkets: Market[] = [
       "Markel supplemental form",
     ],
     appetiteNotes:
-      "Marginal fit; wants a countersigned financials package before they'll engage underwriting.",
+      "Marginal fit; wants a countersigned financials package before they'll engage the carrier's own underwriting team.",
     formatPreference: "ACORD 125/140 as PDF; financials must be signed, not a draft.",
     diligentSearchRequired: true,
+    hardExclusions: [
+      { label: "Class code", pass: true, detail: "Cold storage permitted on a case-by-case basis" },
+      {
+        label: "State licensing",
+        pass: true,
+        detail: "Licensed excess & surplus lines carrier in FL",
+      },
+      { label: "Premium band", pass: true, detail: "$205k–240k within Markel's cold-storage band" },
+    ],
+    softScoreFactors: [
+      {
+        label: "Severity margin",
+        detail: "38% 5yr loss ratio vs. their 50% threshold",
+        points: 15,
+      },
+      {
+        label: "Submission completeness",
+        detail: "5 of 6 requirements on file — signed financials still outstanding",
+        points: 14,
+      },
+      {
+        label: "Historical hit rate",
+        detail: "36% hit rate on Markel's cold-storage book (carrier performance log)",
+        points: 18,
+      },
+      {
+        label: "Appetite confidence",
+        detail: "Case-by-case appetite, not a standing class preference",
+        points: 14,
+      },
+    ],
+    reasoning:
+      "Marginal — appetite for this class is case-by-case rather than a standing preference, and they want a countersigned financials package before engaging.",
+    reasoningSource: { doc: "Financials_FY24.pdf", page: 1 },
   },
   {
     carrier: "Palomar Specialty",
@@ -333,32 +500,28 @@ export const submissionMarkets: Market[] = [
       "Cold storage is currently class-excluded per their appetite profile — do not package.",
     formatPreference: "—",
     diligentSearchRequired: false,
+    hardExclusions: [
+      {
+        label: "Class code",
+        pass: false,
+        detail:
+          "Cold storage / refrigerated warehousing is class-excluded on Palomar's current appetite profile",
+      },
+      {
+        label: "State licensing",
+        pass: true,
+        detail: "Licensed excess & surplus lines carrier in FL",
+      },
+      {
+        label: "Premium band",
+        pass: true,
+        detail: "Would sit within band, but moot given the class exclusion",
+      },
+    ],
+    softScoreFactors: [],
+    reasoning:
+      "Cold storage is excluded outright on Palomar's current appetite profile — the engine stops at the hard-exclusion pass, so no soft score was run.",
   },
-];
-
-export const matchRules = [
-  {
-    rule: "TIV under $75M (Kinsale cold-storage treaty)",
-    pass: true,
-    detail: "$42.8M — well within treaty capacity",
-  },
-  {
-    rule: "State: FL permitted, outside named-storm exclusion zone",
-    pass: true,
-    detail: "Jacksonville — allowed",
-  },
-  {
-    rule: "Class: cold storage / refrigerated warehousing in appetite",
-    pass: true,
-    detail: "NAICS 493120 — actively sought class for this carrier",
-  },
-  { rule: "5yr loss ratio < 60%", pass: true, detail: "38% actual" },
-  {
-    rule: "No open claim > $250k",
-    pass: false,
-    detail: "One open flood claim, reserved $180k — under threshold, soft flag only",
-  },
-  { rule: "Sprinklered ≥ 80% of TIV", pass: true, detail: "92% sprinklered per SOV" },
 ];
 
 export type Quote = {
