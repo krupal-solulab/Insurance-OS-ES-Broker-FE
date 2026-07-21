@@ -54,6 +54,8 @@ import {
   appetiteSignals,
   type Market,
   type Submission,
+  type Binder,
+  type Discrepancy,
 } from "./mocks";
 import type { ReactNode } from "react";
 
@@ -1967,41 +1969,89 @@ const initialCopilotDrafts = [
   },
 ];
 
+const TRIGGER_SOURCE_LABEL: Record<string, string> = {
+  "quote-summary": "Quote Comparison",
+  "placement-confirmation": "Binder & Policy Issuance — Placement Confirmation",
+  "policy-docs-delivered": "Binder & Policy Issuance — Policy Documents Delivered",
+};
+
 export function RetailAgentCopilot({ search = {} }: { search?: Record<string, unknown> }) {
-  // GAP 5 handoff: when Quote Comparison's "Present to retail agent" navigates here with
-  // a real trigger, it replaces the manual-log fallback below for this thread.
-  const quoteTrigger =
-    search.trigger === "quote-summary"
+  // Handoff: Quote Comparison's "Present to retail agent" and Binder & Issuance's two
+  // BI-06 triggers all navigate here with a real trigger, replacing the manual-log
+  // fallback below for whichever thread matches the insured.
+  const triggerKind = search.trigger;
+  const externalTrigger =
+    triggerKind === "quote-summary" ||
+    triggerKind === "placement-confirmation" ||
+    triggerKind === "policy-docs-delivered"
       ? {
+          kind: triggerKind,
           carrier: typeof search.carrier === "string" ? search.carrier : "",
           premium: typeof search.premium === "string" ? search.premium : "",
+          insured: typeof search.insured === "string" ? search.insured : "",
         }
       : null;
 
-  const [active, setActive] = useState(quoteTrigger ? 4 : 1);
+  const matchedThreadId =
+    externalTrigger &&
+    (copilotThreads.find(
+      (t) =>
+        externalTrigger.insured &&
+        t.subject.toLowerCase().includes(externalTrigger.insured.toLowerCase().split(" ")[0]),
+    )?.id ??
+      (externalTrigger.kind === "quote-summary" ? 4 : undefined));
+
+  const [active, setActive] = useState(matchedThreadId ?? 1);
   const thread = copilotThreads.find((t) => t.id === active)!;
   const relationship = retailAgents.find((a) => a.agency === thread.agency);
-  const isTriggeredThread = thread.id === 4 && Boolean(quoteTrigger);
-  const displayTrigger: Trigger = isTriggeredThread
-    ? {
-        source: "Quote Comparison",
-        detail: `Broker selected ${quoteTrigger!.carrier} to present — ${quoteTrigger!.premium}`,
-      }
-    : thread.trigger;
+  const isTriggeredThread = Boolean(externalTrigger) && active === matchedThreadId;
+  const displayTrigger: Trigger =
+    isTriggeredThread && externalTrigger
+      ? {
+          source: TRIGGER_SOURCE_LABEL[externalTrigger.kind],
+          detail:
+            externalTrigger.kind === "quote-summary"
+              ? `Broker selected ${externalTrigger.carrier} to present — ${externalTrigger.premium}`
+              : externalTrigger.kind === "placement-confirmation"
+                ? `Clean bind confirmed with ${externalTrigger.carrier} — ${externalTrigger.premium}`
+                : `Policy documents reconciled against bound terms and forwarded — ${externalTrigger.carrier}`,
+        }
+      : thread.trigger;
 
-  const [drafts, setDrafts] = useState(() =>
-    quoteTrigger
-      ? [
-          {
-            id: "triggered-quote",
-            title: "Quote summary (from Quote Comparison)",
-            tone: "Warm",
-            body: `Hi Jordan, wanted to pass along that ${quoteTrigger.carrier} came back with a quote at ${quoteTrigger.premium} on Highline Hospitality. Happy to walk through terms whenever works for you.`,
-          },
-          ...initialCopilotDrafts,
-        ]
-      : initialCopilotDrafts,
-  );
+  const [drafts, setDrafts] = useState(() => {
+    if (!externalTrigger) return initialCopilotDrafts;
+    if (externalTrigger.kind === "quote-summary") {
+      return [
+        {
+          id: "triggered-quote",
+          title: "Quote summary (from Quote Comparison)",
+          tone: "Warm",
+          body: `Hi Jordan, wanted to pass along that ${externalTrigger.carrier} came back with a quote at ${externalTrigger.premium} on Highline Hospitality. Happy to walk through terms whenever works for you.`,
+        },
+        ...initialCopilotDrafts,
+      ];
+    }
+    if (externalTrigger.kind === "placement-confirmation") {
+      return [
+        {
+          id: "triggered-placement",
+          title: "Placement Confirmation (from Binder & Issuance)",
+          tone: "Warm",
+          body: `Hi team, confirming ${externalTrigger.insured || "the account"} is now bound with ${externalTrigger.carrier} at ${externalTrigger.premium}. Binder and full terms to follow shortly.`,
+        },
+        ...initialCopilotDrafts,
+      ];
+    }
+    return [
+      {
+        id: "triggered-docs",
+        title: "Policy Documents Delivered (from Binder & Issuance)",
+        tone: "Warm",
+        body: `Hi team, the issued policy for ${externalTrigger.insured || "the account"} has been reconciled against the bound terms and is attached. Let us know if you have any questions.`,
+      },
+      ...initialCopilotDrafts,
+    ];
+  });
   const [composeText, setComposeText] = useState(
     "Draft attached — please review and send when ready.",
   );
@@ -2216,7 +2266,10 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
               {isTriggeredThread && (
                 <Chip tone="accent">
                   <ArrowRight className="h-2.5 w-2.5" />
-                  Linked from Quote Comparison
+                  Linked from{" "}
+                  {externalTrigger?.kind === "quote-summary"
+                    ? "Quote Comparison"
+                    : "Binder & Issuance"}
                 </Chip>
               )}
             </div>
@@ -3003,47 +3056,315 @@ export function QuoteComparison() {
    5. Binder & Policy Issuance Coordination
    ============================================================ */
 
+type BinderOverride = {
+  subjectivities?: Record<string, boolean>;
+  bindResolution?: Discrepancy["resolution"];
+  docsReceivedDate?: string | null;
+  docDiscrepancy?: Discrepancy | null;
+  docResolution?: Discrepancy["resolution"];
+  obligationStatus?: Record<string, "Pending" | "Satisfied">;
+  placementConfirmationSent?: boolean;
+  policyDocsDeliveredSent?: boolean;
+};
+
+// Merges a binder's base mock data with whatever the broker has actually done
+// this session (resolutions, clearances, simulated arrivals). Plain data
+// derivation, not a React hook — deliberately not named `use...` after the
+// last false-positive with the hooks-naming lint rule.
+function deriveBinderState(binder: Binder, ov: BinderOverride) {
+  const subjectivities = binder.subjectivities.map((s) => ({
+    ...s,
+    cleared: ov.subjectivities?.[s.label] ?? s.cleared,
+  }));
+  const unresolvedMaterial = subjectivities.filter((s) => s.tier === "Material" && !s.cleared);
+  const allCleared = subjectivities.every((s) => s.cleared);
+
+  const bindDiscrepancy: Discrepancy | null = binder.bindDiscrepancy
+    ? {
+        ...binder.bindDiscrepancy,
+        resolution: ov.bindResolution ?? binder.bindDiscrepancy.resolution,
+      }
+    : null;
+  const bindClean = !bindDiscrepancy || bindDiscrepancy.resolution !== "Unresolved";
+
+  const docsReceivedDate =
+    ov.docsReceivedDate !== undefined ? ov.docsReceivedDate : binder.docsReceivedDate;
+  const baseDocDiscrepancy =
+    ov.docDiscrepancy !== undefined ? ov.docDiscrepancy : binder.docDiscrepancy;
+  const docDiscrepancy: Discrepancy | null = baseDocDiscrepancy
+    ? { ...baseDocDiscrepancy, resolution: ov.docResolution ?? baseDocDiscrepancy.resolution }
+    : null;
+  const docsClean = !docDiscrepancy || docDiscrepancy.resolution !== "Unresolved";
+  const docsExpectedDays = daysUntil(binder.docsExpectedBy);
+  const docsOverdue = !docsReceivedDate && docsExpectedDays !== null && docsExpectedDays < 0;
+
+  const obligations = binder.postBindObligations.map((o) => ({
+    ...o,
+    status: ov.obligationStatus?.[o.label] ?? o.status,
+    overdue:
+      (ov.obligationStatus?.[o.label] ?? o.status) === "Pending" && (daysUntil(o.dueBy) ?? 0) < 0,
+  }));
+
+  const placementConfirmationSent =
+    ov.placementConfirmationSent ?? binder.placementConfirmationSent;
+  const policyDocsDeliveredSent = ov.policyDocsDeliveredSent ?? binder.policyDocsDeliveredSent;
+
+  return {
+    subjectivities,
+    unresolvedMaterial,
+    allCleared,
+    bindDiscrepancy,
+    bindClean,
+    docsReceivedDate,
+    docDiscrepancy,
+    docsClean,
+    docsOverdue,
+    obligations,
+    placementConfirmationSent,
+    policyDocsDeliveredSent,
+  };
+}
+
+function DiscrepancyBlock({
+  title,
+  discrepancy,
+  onResolve,
+}: {
+  title: string;
+  discrepancy: Discrepancy;
+  onResolve: (resolution: Discrepancy["resolution"]) => void;
+}) {
+  const resolved = discrepancy.resolution !== "Unresolved";
+  return (
+    <div
+      className={`rounded-lg border p-3 text-sm ${resolved ? "border-success/30 bg-success/5" : "border-2 border-destructive/40 bg-destructive/5"}`}
+    >
+      <div className="flex items-center gap-2 font-medium">
+        {resolved ? (
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+        ) : (
+          <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+        )}
+        {title} — {discrepancy.field} mismatch
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-3 rounded-md border border-border bg-background p-2 text-xs">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Requested
+          </div>
+          <div className="font-mono">{discrepancy.requested}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Carrier confirmed
+          </div>
+          <div className="font-mono">{discrepancy.confirmed}</div>
+        </div>
+      </div>
+      {resolved ? (
+        <div className="mt-2 text-[11px] text-muted-foreground">
+          Resolution: {discrepancy.resolution}
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            className="!py-1 !text-xs"
+            onClick={() => onResolve("Accepted carrier terms")}
+          >
+            Accept carrier's terms
+          </Button>
+          <Button
+            variant="danger"
+            className="!py-1 !text-xs"
+            onClick={() => onResolve("Disputed — pending carrier")}
+          >
+            Dispute — flag for follow-up
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BinderIssuance() {
+  const navigate = useNavigate();
   const [sel, setSel] = useState(binders[0].id);
   const b = binders.find((x) => x.id === sel)!;
+  const [overrides, setOverrides] = useState<Record<string, BinderOverride>>({});
+  const ov = overrides[b.id] ?? {};
+  const view = deriveBinderState(b, ov);
+
+  const [log, setLog] = useState<LogEntry[]>(() => [
+    {
+      at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      who: "AI (Matching/Ranking Core)",
+      what: "Bind order generated matching selected quote terms exactly (BI-01)",
+      ctx: `${b.id} · ${b.insured}`,
+      conf: "—",
+    },
+  ]);
+
+  function appendLog(who: string, what: string, ctx: string, conf = "—") {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf,
+      },
+      ...prev,
+    ]);
+  }
+
+  function patch(binderId: string, patchOv: BinderOverride) {
+    setOverrides((prev) => ({ ...prev, [binderId]: { ...prev[binderId], ...patchOv } }));
+  }
+
+  function toggleSubjectivity(label: string, cleared: boolean) {
+    patch(b.id, { subjectivities: { ...ov.subjectivities, [label]: cleared } });
+    appendLog(
+      "Sam D. (Broker)",
+      `${cleared ? "Cleared" : "Reopened"} subjectivity "${label}"`,
+      `${b.id} · ${b.insured}`,
+    );
+  }
+
+  function resolveBind(resolution: Discrepancy["resolution"]) {
+    patch(b.id, { bindResolution: resolution });
+    appendLog(
+      "Sam D. (Broker)",
+      `Resolved bind-confirmation discrepancy (BI-03) — ${resolution}`,
+      `${b.id} · ${view.bindDiscrepancy?.field}: requested ${view.bindDiscrepancy?.requested} vs confirmed ${view.bindDiscrepancy?.confirmed}`,
+    );
+  }
+
+  function resolveDoc(resolution: Discrepancy["resolution"]) {
+    patch(b.id, { docResolution: resolution });
+    appendLog(
+      "Sam D. (Broker)",
+      `Resolved issued-policy discrepancy (BI-05) — ${resolution}`,
+      `${b.id} · ${view.docDiscrepancy?.field}: requested ${view.docDiscrepancy?.requested} vs confirmed ${view.docDiscrepancy?.confirmed}`,
+    );
+  }
+
+  function simulateDocsArrived() {
+    patch(b.id, {
+      docsReceivedDate: "Feb 03, 2026",
+      docDiscrepancy: {
+        field: "Effective date",
+        requested: b.effective,
+        confirmed: "Mar 03, 2026",
+        resolution: "Unresolved",
+      },
+    });
+    appendLog(
+      "AI (Extraction Core)",
+      "Policy documents received — reconciling against confirmed bind terms (BI-05)",
+      `${b.id} · ${b.insured}`,
+    );
+  }
+
+  function setObligation(label: string, status: "Pending" | "Satisfied") {
+    patch(b.id, { obligationStatus: { ...ov.obligationStatus, [label]: status } });
+    appendLog(
+      "Sam D. (Broker)",
+      `Post-bind obligation "${label}" marked ${status}`,
+      `${b.id} · ${b.insured}`,
+    );
+  }
+
+  function sendPlacementConfirmation() {
+    patch(b.id, { placementConfirmationSent: true });
+    appendLog(
+      "Sam D. (Broker)",
+      "Sent Placement Confirmation to Retail Agent Copilot (BI-06)",
+      `${b.id} · ${b.insured}`,
+    );
+    navigate({
+      to: "/app/workflows/$slug",
+      params: { slug: "agent-copilot" },
+      search: {
+        trigger: "placement-confirmation",
+        carrier: b.carrier,
+        insured: b.insured,
+        premium: b.premium,
+      },
+    });
+  }
+
+  function sendPolicyDocsDelivered() {
+    patch(b.id, { policyDocsDeliveredSent: true });
+    appendLog(
+      "Sam D. (Broker)",
+      "Sent Policy Documents Delivered to Retail Agent Copilot, forwarding final docs (BI-06)",
+      `${b.id} · ${b.insured}`,
+    );
+    navigate({
+      to: "/app/workflows/$slug",
+      params: { slug: "agent-copilot" },
+      search: {
+        trigger: "policy-docs-delivered",
+        carrier: b.carrier,
+        insured: b.insured,
+        premium: b.premium,
+      },
+    });
+  }
+
   const steps = [
     { label: "Selected quote received", done: true, note: `${b.carrier} · ${b.premium}` },
     {
-      label: "Bind request sent to carrier",
-      done: true,
-      note: "Sent with signed application + subjectivity tracker",
+      label: "Pre-bind subjectivity status (BI-02, inherited from QC-02)",
+      done: view.allCleared,
+      active: !view.allCleared,
+      note:
+        view.unresolvedMaterial.length > 0
+          ? `BLOCKED — material subjectivity unresolved: ${view.unresolvedMaterial.map((s) => s.label).join(", ")}`
+          : `${view.subjectivities.filter((s) => s.cleared).length} of ${view.subjectivities.length} cleared`,
     },
     {
-      label: "Subjectivity clearance",
-      done: b.subjectivitiesCleared === b.subjectivitiesTotal,
-      active: b.subjectivitiesCleared < b.subjectivitiesTotal,
-      note: `${b.subjectivitiesCleared} of ${b.subjectivitiesTotal} cleared`,
+      label: "Bind order generated & sent to carrier (BI-01)",
+      done: view.allCleared,
+      active: false,
+      note: view.allCleared
+        ? "Matches selected quote terms exactly — sent manually by broker"
+        : "Blocked until subjectivities clear",
     },
     {
-      label: "Carrier bind confirmation reconciled",
-      done: b.status === "Bound — awaiting policy" || b.status === "Issued",
-      active: b.status === "Ready to bind",
-      note: "Checked line-by-line against agreed terms — 0 discrepancies",
-    },
-    {
-      label: "Issued policy reconciled against binder",
-      done: b.status === "Issued",
-      active: b.status === "Bound — awaiting policy",
-      note: "Declarations page compared to bound terms",
-    },
-    {
-      label: "Retail agent & insured notified",
-      done: b.status === "Issued",
-      note: "One-click notification",
+      label: "Carrier bind confirmation reconciled (BI-03)",
+      done: (b.status === "Bound — awaiting policy" || b.status === "Issued") && view.bindClean,
+      active: (b.status === "Bound — awaiting policy" || b.status === "Issued") && !view.bindClean,
+      note: view.bindDiscrepancy
+        ? view.bindClean
+          ? `Discrepancy resolved — ${view.bindDiscrepancy.resolution}`
+          : "Material mismatch found — resolve before this reads as a clean bind"
+        : b.status === "Ready to bind" || b.status === "Subjectivities open"
+          ? "Not yet bound"
+          : "Checked line-by-line against agreed terms — clean",
     },
   ];
+
   return (
     <div className="mx-auto max-w-[1500px]">
       <PageHeader
         eyebrow="Workflow 05"
         title="Binder & Policy Issuance Coordination"
-        description="From selected quote to bound policy — subjectivity clearance, carrier bind confirmation, and issued-policy reconciliation, all checked against what was actually agreed."
-        actions={<Button variant="primary">Issue binder</Button>}
+        description="From selected quote to bound policy — subjectivity clearance, carrier bind confirmation, and issued-policy reconciliation, all checked against what was actually agreed, never assumed."
+        actions={
+          <Button
+            variant="primary"
+            disabled={view.unresolvedMaterial.length > 0}
+            title={
+              view.unresolvedMaterial.length > 0
+                ? "Blocked — resolve the unresolved material subjectivity first"
+                : undefined
+            }
+          >
+            Issue binder
+          </Button>
+        }
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
@@ -3105,15 +3426,75 @@ export function BinderIssuance() {
                     <div className={`text-sm ${s.active ? "font-medium" : ""}`}>{s.label}</div>
                     <div className="text-[11px] text-muted-foreground">{s.note}</div>
                   </div>
-                  {s.active && (
-                    <Button variant="primary" className="!py-1 !text-xs">
-                      Run
-                    </Button>
-                  )}
                 </li>
               ))}
             </ol>
+
+            {!view.allCleared && (
+              <div className="mt-3 space-y-2 rounded-lg border border-dashed border-border p-3">
+                <div className="text-xs font-medium">Clear subjectivities</div>
+                {view.subjectivities
+                  .filter((s) => !s.cleared)
+                  .map((s) => (
+                    <div key={s.label} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="flex items-center gap-2">
+                        <Chip tone={s.tier === "Material" ? "danger" : "neutral"}>{s.tier}</Chip>
+                        {s.label}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        className="!py-1 !text-xs"
+                        onClick={() => toggleSubjectivity(s.label, true)}
+                      >
+                        Mark cleared
+                      </Button>
+                    </div>
+                  ))}
+              </div>
+            )}
           </Panel>
+
+          {view.bindDiscrepancy && (
+            <DiscrepancyBlock
+              title="Bind confirmation vs requested terms"
+              discrepancy={view.bindDiscrepancy}
+              onResolve={resolveBind}
+            />
+          )}
+
+          {view.bindClean && (b.status === "Bound — awaiting policy" || b.status === "Issued") && (
+            <div
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm ${view.docsOverdue ? "border-2 border-destructive/40 bg-destructive/5" : "border-border"}`}
+            >
+              <div>
+                <div className="font-medium">Policy document arrival (BI-04)</div>
+                <div className="text-[11px] text-muted-foreground">
+                  {view.docsReceivedDate
+                    ? `Received ${view.docsReceivedDate}`
+                    : view.docsOverdue
+                      ? `Overdue — carrier's stated delivery date (${b.docsExpectedBy}) has passed with nothing received`
+                      : `Expected by ${b.docsExpectedBy} — monitoring against carrier's stated timeline`}
+                </div>
+              </div>
+              {view.docsOverdue && !view.docsReceivedDate && (
+                <Button
+                  variant="secondary"
+                  className="!py-1 !text-xs"
+                  onClick={simulateDocsArrived}
+                >
+                  Simulate docs arrived
+                </Button>
+              )}
+            </div>
+          )}
+
+          {view.docDiscrepancy && (
+            <DiscrepancyBlock
+              title="Issued policy vs confirmed bind terms"
+              discrepancy={view.docDiscrepancy}
+              onResolve={resolveDoc}
+            />
+          )}
 
           <div className="grid gap-5 md:grid-cols-2">
             <Panel title="AI bind recommendation">
@@ -3125,36 +3506,144 @@ export function BinderIssuance() {
                   </div>
                 </div>
                 <p className="mt-2 text-sm">
-                  {b.subjectivitiesCleared} of {b.subjectivitiesTotal} subjectivities satisfied.
-                  Premium {b.premium}, effective {b.effective}. Never treats a carrier document as
-                  authoritative without reconciling it against the terms actually agreed.
+                  {view.subjectivities.filter((s) => s.cleared).length} of{" "}
+                  {view.subjectivities.length} subjectivities satisfied. Premium {b.premium},
+                  effective {b.effective}. Never treats a carrier document as authoritative without
+                  reconciling it against the terms actually agreed.
                 </p>
               </div>
             </Panel>
-            <Panel title="Policy issuance">
+            <Panel title="Retail Agent Comms triggers (BI-06)">
               <div className="space-y-2 text-sm">
-                <ProgressRow
-                  label="Bind confirmation reconciled"
-                  pct={b.status === "Subjectivities open" ? 40 : 100}
-                />
-                <ProgressRow
-                  label="Policy jacket assembly"
-                  pct={b.status === "Issued" ? 100 : 70}
-                />
-                <ProgressRow
-                  label="Declarations reconciliation"
-                  pct={
-                    b.status === "Issued" ? 100 : b.status === "Bound — awaiting policy" ? 55 : 0
-                  }
-                />
-                <ProgressRow label="Surplus lines filing" pct={b.status === "Issued" ? 100 : 30} />
-                <ProgressRow
-                  label="PAS / book-of-record write-back"
-                  pct={b.status === "Issued" ? 100 : 0}
-                />
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-border p-3">
+                  <div>
+                    <div className="font-medium">Placement Confirmation</div>
+                    <div className="text-[11px] text-muted-foreground">Fires on clean bind</div>
+                  </div>
+                  {view.placementConfirmationSent ? (
+                    <Chip tone="success">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Sent
+                    </Chip>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      className="!py-1 !text-xs"
+                      disabled={!view.bindClean}
+                      onClick={sendPlacementConfirmation}
+                    >
+                      Send
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-border p-3">
+                  <div>
+                    <div className="font-medium">Policy Documents Delivered</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Fires on clean doc reconciliation, forwards final docs
+                    </div>
+                  </div>
+                  {view.policyDocsDeliveredSent ? (
+                    <Chip tone="success">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Sent
+                    </Chip>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      className="!py-1 !text-xs"
+                      disabled={!view.docsReceivedDate || !view.docsClean}
+                      title={
+                        !view.docsReceivedDate
+                          ? "Docs not yet received"
+                          : !view.docsClean
+                            ? "Resolve the doc discrepancy first"
+                            : undefined
+                      }
+                      onClick={sendPolicyDocsDelivered}
+                    >
+                      Send
+                    </Button>
+                  )}
+                </div>
               </div>
             </Panel>
           </div>
+
+          <Panel
+            title="Post-bind obligation tracking (BI-07)"
+            subtitle="Own timeline — independent of the bind/issuance steps above"
+          >
+            {view.obligations.length === 0 ? (
+              <div className="text-sm text-muted-foreground">
+                No post-bind obligations tracked yet for this record.
+              </div>
+            ) : (
+              <ul className="divide-y divide-border">
+                {view.obligations.map((o) => (
+                  <li
+                    key={o.label}
+                    className="flex items-center justify-between gap-3 py-3 text-sm"
+                  >
+                    <div>
+                      <div className="font-medium">{o.label}</div>
+                      <div className="text-[11px] text-muted-foreground">Due {o.dueBy}</div>
+                    </div>
+                    {o.status === "Satisfied" ? (
+                      <Chip tone="success">Satisfied</Chip>
+                    ) : o.overdue ? (
+                      <div className="flex items-center gap-2">
+                        <Chip tone="danger">Overdue</Chip>
+                        <Button
+                          variant="secondary"
+                          className="!py-1 !text-xs"
+                          onClick={() => setObligation(o.label, "Satisfied")}
+                        >
+                          Mark satisfied
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Chip tone="neutral">Pending</Chip>
+                        <Button
+                          variant="secondary"
+                          className="!py-1 !text-xs"
+                          onClick={() => setObligation(o.label, "Satisfied")}
+                        >
+                          Mark satisfied
+                        </Button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+
+          <Panel
+            title="Audit log (BI-08 / E&O record)"
+            subtitle="Every step, every discrepancy found, and how it was resolved — proof terms were actively verified, not assumed"
+            actions={<FoundationBadge kind="matching" />}
+          >
+            <ul className="divide-y divide-border">
+              {log.slice(0, 10).map((d, i) => (
+                <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                  <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
+                  <div className="flex-1">
+                    <div>
+                      <b>{d.who}</b> — {d.what}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 text-[10px] text-muted-foreground">
+              Session-only for this prototype — feeds the same Feedback/Eval store pattern as other
+              workflows. This is the most E&O-relevant record in the suite: it documents that every
+              carrier claim was checked against what was actually agreed, not taken on faith.
+            </div>
+          </Panel>
         </div>
       </div>
     </div>

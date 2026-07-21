@@ -591,14 +591,37 @@ export const quotes: Quote[] = [
   },
 ];
 
+export type Discrepancy = {
+  field: string;
+  requested: string;
+  confirmed: string;
+  resolution: "Unresolved" | "Accepted carrier terms" | "Disputed — pending carrier";
+};
+
+export type Subjectivity = { label: string; tier: "Material" | "Routine"; cleared: boolean };
+
+export type PostBindObligation = { label: string; dueBy: string; status: "Pending" | "Satisfied" };
+
 export type Binder = {
   id: string;
   insured: string;
   carrier: string;
   premium: string;
   effective: string;
-  subjectivitiesCleared: number;
-  subjectivitiesTotal: number;
+  /** BI-02 — inherited from Quote Comparison's QC-02 tiering. An unresolved Material item blocks bind-order generation. */
+  subjectivities: Subjectivity[];
+  /** BI-03 — carrier bind confirmation vs originally requested terms. Null until a bind confirmation exists. */
+  bindDiscrepancy: Discrepancy | null;
+  /** BI-04 — carrier's stated policy-document delivery date, for overdue monitoring. */
+  docsExpectedBy: string;
+  docsReceivedDate: string | null;
+  /** BI-05 — issued policy docs vs confirmed bind terms. Null until docs arrive. */
+  docDiscrepancy: Discrepancy | null;
+  /** BI-07 — tracked on its own timeline, independent of the bind/issuance steps. */
+  postBindObligations: PostBindObligation[];
+  /** BI-06 — the two distinct Retail Agent Comms triggers. */
+  placementConfirmationSent: boolean;
+  policyDocsDeliveredSent: boolean;
   status: "Subjectivities open" | "Ready to bind" | "Bound — awaiting policy" | "Issued";
 };
 
@@ -609,8 +632,19 @@ export const binders: Binder[] = [
     carrier: "Kinsale Insurance",
     premium: "$187,400",
     effective: "Feb 12, 2026",
-    subjectivitiesCleared: 4,
-    subjectivitiesTotal: 4,
+    subjectivities: [
+      { label: "Signed application", tier: "Routine", cleared: true },
+      { label: "Sprinkler certification on file", tier: "Routine", cleared: true },
+      { label: "Refrigeration monitoring cert", tier: "Routine", cleared: true },
+      { label: "Down payment received", tier: "Material", cleared: true },
+    ],
+    bindDiscrepancy: null,
+    docsExpectedBy: "Mar 05, 2026",
+    docsReceivedDate: null,
+    docDiscrepancy: null,
+    postBindObligations: [],
+    placementConfirmationSent: false,
+    policyDocsDeliveredSent: false,
     status: "Ready to bind",
   },
   {
@@ -619,8 +653,18 @@ export const binders: Binder[] = [
     carrier: "James River Insurance",
     premium: "$421,000",
     effective: "Feb 20, 2026",
-    subjectivitiesCleared: 2,
-    subjectivitiesTotal: 3,
+    subjectivities: [
+      { label: "Signed application", tier: "Routine", cleared: true },
+      { label: "Liquor license copy", tier: "Routine", cleared: true },
+      { label: "4yr prior liquor liability loss runs", tier: "Material", cleared: false },
+    ],
+    bindDiscrepancy: null,
+    docsExpectedBy: "—",
+    docsReceivedDate: null,
+    docDiscrepancy: null,
+    postBindObligations: [],
+    placementConfirmationSent: false,
+    policyDocsDeliveredSent: false,
     status: "Subjectivities open",
   },
   {
@@ -629,8 +673,30 @@ export const binders: Binder[] = [
     carrier: "Berkley Specialty",
     premium: "$118,400",
     effective: "Mar 10, 2026",
-    subjectivitiesCleared: 3,
-    subjectivitiesTotal: 3,
+    subjectivities: [
+      { label: "Signed application", tier: "Routine", cleared: true },
+      { label: "Certificate of insurance provided", tier: "Routine", cleared: true },
+      { label: "Prior carrier loss run", tier: "Material", cleared: true },
+    ],
+    bindDiscrepancy: {
+      field: "Deductible",
+      requested: "$10,000",
+      confirmed: "$15,000",
+      resolution: "Unresolved",
+    },
+    docsExpectedBy: "Mar 20, 2026",
+    docsReceivedDate: null,
+    docDiscrepancy: null,
+    postBindObligations: [
+      {
+        label: "Submit signed application copy to carrier",
+        dueBy: "Jan 28, 2026",
+        status: "Pending",
+      },
+      { label: "Provide updated loss control report", dueBy: "Mar 01, 2026", status: "Pending" },
+    ],
+    placementConfirmationSent: false,
+    policyDocsDeliveredSent: false,
     status: "Bound — awaiting policy",
   },
   {
@@ -639,9 +705,27 @@ export const binders: Binder[] = [
     carrier: "Beazley",
     premium: "$612,300",
     effective: "Feb 28, 2026",
-    subjectivitiesCleared: 5,
-    subjectivitiesTotal: 5,
-    status: "Issued",
+    subjectivities: [
+      { label: "Signed application", tier: "Routine", cleared: true },
+      { label: "Network security questionnaire", tier: "Material", cleared: true },
+      { label: "Prior cyber loss run", tier: "Routine", cleared: true },
+      { label: "COI provided", tier: "Routine", cleared: true },
+      { label: "Down payment received", tier: "Material", cleared: true },
+    ],
+    bindDiscrepancy: null,
+    docsExpectedBy: "Jan 30, 2026",
+    docsReceivedDate: null,
+    docDiscrepancy: null,
+    postBindObligations: [
+      {
+        label: "Confirm cyber sublimit endorsement wording",
+        dueBy: "Feb 10, 2026",
+        status: "Pending",
+      },
+    ],
+    placementConfirmationSent: true,
+    policyDocsDeliveredSent: false,
+    status: "Bound — awaiting policy",
   },
 ];
 
