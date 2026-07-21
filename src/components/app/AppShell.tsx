@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Toaster } from "@/components/ui/sonner";
 
 const workflows = [
   { slug: "submission-matching", label: "Submission Market Matching", icon: Inbox, badge: "12" },
@@ -80,6 +81,7 @@ export function AppShell() {
         </div>
       </div>
       <CopilotDrawer open={copilotOpen} onClose={() => setCopilotOpen(false)} />
+      <Toaster position="bottom-right" />
       {!copilotOpen && (
         <button
           onClick={() => setCopilotOpen(true)}
@@ -138,7 +140,9 @@ function Sidebar({ pathname }: { pathname: string }) {
           AI usage this month
         </div>
         <div className="mt-3 text-2xl font-serif tracking-tight">1,284</div>
-        <div className="text-[11px] text-muted-foreground">decisions logged · 96.4% audit-clean</div>
+        <div className="text-[11px] text-muted-foreground">
+          decisions logged · 96.4% audit-clean
+        </div>
         <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-background">
           <div className="h-full w-[64%] bg-accent" />
         </div>
@@ -176,7 +180,12 @@ function NavItem({
         active ? "bg-foreground text-background" : "hover:bg-secondary hover:text-foreground",
       )}
     >
-      <Icon className={cn("h-4 w-4 shrink-0", active ? "text-background" : "text-muted-foreground group-hover:text-foreground")} />
+      <Icon
+        className={cn(
+          "h-4 w-4 shrink-0",
+          active ? "text-background" : "text-muted-foreground group-hover:text-foreground",
+        )}
+      />
       <span className="truncate">{label}</span>
       {badge && (
         <span
@@ -192,7 +201,13 @@ function NavItem({
   );
 }
 
-function TopBar({ crumbs, onOpenCopilot }: { crumbs: { label: string; to?: string }[]; onOpenCopilot: () => void }) {
+function TopBar({
+  crumbs,
+  onOpenCopilot,
+}: {
+  crumbs: { label: string; to?: string }[];
+  onOpenCopilot: () => void;
+}) {
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-border bg-background/85 px-6 backdrop-blur md:px-10">
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -220,12 +235,17 @@ function TopBar({ crumbs, onOpenCopilot }: { crumbs: { label: string; to?: strin
             <Command className="mr-0.5 inline h-2.5 w-2.5" />K
           </kbd>
         </button>
-        <button className="relative rounded-lg border border-border p-2 hover:bg-secondary" aria-label="Notifications">
+        <button
+          className="relative rounded-lg border border-border p-2 hover:bg-secondary"
+          aria-label="Notifications"
+        >
           <Bell className="h-4 w-4" />
           <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-accent" />
         </button>
         <div className="flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-1 py-1 pr-3">
-          <div className="grid h-7 w-7 place-items-center rounded-full bg-foreground font-serif text-xs text-background">SD</div>
+          <div className="grid h-7 w-7 place-items-center rounded-full bg-foreground font-serif text-xs text-background">
+            SD
+          </div>
           <div className="text-xs leading-tight">
             <div className="font-medium">Sam D.</div>
             <div className="text-[10px] text-muted-foreground">Sr. Wholesale Broker</div>
@@ -280,16 +300,23 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
           <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
             Copilot
           </span>
-          <button onClick={onClose} className="ml-auto rounded-md p-1.5 hover:bg-secondary" aria-label="Close">
+          <button
+            onClick={onClose}
+            className="ml-auto rounded-md p-1.5 hover:bg-secondary"
+            aria-label="Close"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-6 text-sm">
           <div className="rounded-xl border border-border bg-secondary/60 p-4">
-            <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Context</div>
+            <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Context
+            </div>
             <div className="mt-1 text-foreground">
-              You have <b>12 submissions</b> awaiting review, <b>7 remarket reviews</b> due in the next 30 days, and{" "}
-              <b>4 mid-term changes</b> pending approval. Two diligent-search records need declination evidence.
+              You have <b>12 submissions</b> awaiting review, <b>7 remarket reviews</b> due in the
+              next 30 days, and <b>4 mid-term changes</b> pending approval. Two diligent-search
+              records need declination evidence.
             </div>
           </div>
           <div className="rounded-xl border border-border p-4">
@@ -297,16 +324,22 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
               <Sparkles className="h-3 w-3 text-accent" /> Insight
             </div>
             <p className="text-foreground">
-              Marsh Southeast has increased submission volume <b>+22%</b> quarter-over-quarter with hit ratio holding at{" "}
-              <b>38%</b>. Consider prioritizing their queue.
+              Marsh Southeast has increased submission volume <b>+22%</b> quarter-over-quarter with
+              hit ratio holding at <b>38%</b>. Consider prioritizing their queue.
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <button className="rounded-md border border-border bg-secondary px-2.5 py-1.5">Open agent view</button>
-              <button className="rounded-md border border-border bg-secondary px-2.5 py-1.5">Draft thank-you</button>
+              <button className="rounded-md border border-border bg-secondary px-2.5 py-1.5">
+                Open agent view
+              </button>
+              <button className="rounded-md border border-border bg-secondary px-2.5 py-1.5">
+                Draft thank-you
+              </button>
             </div>
           </div>
           <div>
-            <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Try</div>
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Try
+            </div>
             <div className="flex flex-wrap gap-2">
               {prompts.map((p) => (
                 <button
@@ -335,7 +368,10 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
             <span>Powered by Extraction Core + Decision Core · citations included</span>
-            <a className="inline-flex items-center gap-1 hover:text-foreground" href="/app/assistant">
+            <a
+              className="inline-flex items-center gap-1 hover:text-foreground"
+              href="/app/assistant"
+            >
               Open full assistant <ArrowUpRight className="h-3 w-3" />
             </a>
           </div>
@@ -360,10 +396,14 @@ export function PageHeader({
     <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
         {eyebrow && (
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">{eyebrow}</div>
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+            {eyebrow}
+          </div>
         )}
         <h1 className="font-serif text-3xl leading-tight tracking-tight md:text-4xl">{title}</h1>
-        {description && <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{description}</p>}
+        {description && (
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{description}</p>
+        )}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>

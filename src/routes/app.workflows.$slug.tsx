@@ -13,7 +13,9 @@ import {
   PipelineCarrierReporting,
 } from "@/components/app/Workflows";
 
-const map: Record<string, React.ComponentType> = {
+export type WorkflowSearch = Record<string, unknown>;
+
+const map: Record<string, React.ComponentType<{ search: WorkflowSearch }>> = {
   "submission-matching": SubmissionMarketMatching,
   "package-assembly": PackageAssembly,
   "agent-copilot": RetailAgentCopilot,
@@ -28,12 +30,15 @@ const map: Record<string, React.ComponentType> = {
 
 export const Route = createFileRoute("/app/workflows/$slug")({
   component: WorkflowRoute,
-  notFoundComponent: () => <div className="p-6 text-sm text-muted-foreground">Unknown workflow.</div>,
+  notFoundComponent: () => (
+    <div className="p-6 text-sm text-muted-foreground">Unknown workflow.</div>
+  ),
 });
 
 function WorkflowRoute() {
   const { slug } = Route.useParams();
+  const search = Route.useSearch() as WorkflowSearch;
   const Comp = map[slug];
   if (!Comp) throw notFound();
-  return <Comp />;
+  return <Comp search={search} />;
 }
