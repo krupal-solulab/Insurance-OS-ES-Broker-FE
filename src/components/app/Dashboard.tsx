@@ -31,7 +31,7 @@ import type { ReactNode } from "react";
 
 export function Dashboard() {
   return (
-    <div className="mx-auto max-w-[1400px]">
+    <div className="mx-auto max-w-[1400px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Tuesday · July 21, 2026"
         title="Good morning, Sam."
@@ -183,7 +183,7 @@ export function Dashboard() {
                       <Link
                         to="/app/workflows/$slug"
                         params={{ slug: "submission-matching" }}
-                        className="font-medium text-foreground hover:text-accent"
+                        className="rounded font-medium text-foreground transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
                         {s.insured}
                       </Link>
@@ -361,8 +361,8 @@ function QuickAction({
       to={to}
       className={
         primary
-          ? "inline-flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-sm font-medium text-background transition hover:opacity-90"
-          : "inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3.5 py-2 text-sm text-foreground transition hover:bg-secondary"
+          ? "inline-flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-sm font-medium text-background transition active:scale-[0.98] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          : "inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3.5 py-2 text-sm text-foreground transition active:scale-[0.98] hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       }
     >
       <Icon className="h-4 w-4" />
@@ -399,7 +399,7 @@ function Kpi({
   return (
     <Link
       to={to}
-      className="group rounded-xl border border-border bg-background p-4 transition hover:border-foreground/40 hover:shadow-sm"
+      className="group rounded-xl border border-border bg-background p-4 shadow-sm transition hover:border-foreground/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       <div className="flex items-start justify-between">
         <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -430,7 +430,9 @@ function Card({
   className?: string;
 }) {
   return (
-    <section className={`rounded-2xl border border-border bg-background p-5 ${className}`}>
+    <section
+      className={`rounded-2xl border border-border bg-background p-5 shadow-sm ${className}`}
+    >
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h3 className="font-serif text-lg leading-tight">{title}</h3>
@@ -439,7 +441,7 @@ function Card({
         {href && (
           <Link
             to={href}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             Open <ArrowUpRight className="h-3 w-3" />
           </Link>
@@ -466,7 +468,11 @@ function ScorePill({ value }: { value: number }) {
       : value >= 60
         ? "bg-warn/15 text-warn"
         : "bg-destructive/10 text-destructive";
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-mono ${tone}`}>{value}</span>;
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-mono transition-colors ${tone}`}>
+      {value}
+    </span>
+  );
 }
 
 function RecPill({ rec }: { rec: string }) {
@@ -480,7 +486,7 @@ function RecPill({ rec }: { rec: string }) {
     rec === "Proceed to market" ? CheckCircle2 : rec === "No market" ? AlertTriangle : Info;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tone}`}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${tone}`}
     >
       <Icon className="h-3 w-3" /> {rec}
     </span>
@@ -517,12 +523,12 @@ function PipelineChart() {
           <div key={m.m} className="flex flex-1 flex-col items-center gap-2">
             <div className="relative flex h-40 w-full items-end justify-center gap-1">
               <div
-                className="w-4 rounded-t bg-foreground/15"
+                className="w-4 rounded-t bg-foreground/15 transition-[height] duration-700 ease-out"
                 style={{ height: `${(m.subs / max) * 100}%` }}
                 title={`Submissions ${m.subs}`}
               />
               <div
-                className="w-4 rounded-t bg-accent"
+                className="w-4 rounded-t bg-accent transition-[height] duration-700 ease-out"
                 style={{ height: `${(m.bound / max) * 100}%` }}
                 title={`Bound ${m.bound}`}
               />
@@ -556,7 +562,7 @@ function StateMap() {
           </div>
           <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
             <div
-              className="h-full bg-foreground"
+              className="h-full bg-foreground transition-[width] duration-700 ease-out"
               style={{ width: `${(s.premium / max) * 100}%` }}
             />
           </div>
@@ -581,16 +587,16 @@ function WorkflowTile({
   return (
     <Link
       to={to}
-      className="group flex items-center gap-3 rounded-xl border border-border bg-background p-4 transition hover:border-foreground/40"
+      className="group flex items-center gap-3 rounded-xl border border-border bg-background p-4 shadow-sm transition hover:border-foreground/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
-      <div className="grid h-10 w-10 place-items-center rounded-lg bg-secondary group-hover:bg-foreground group-hover:text-background">
+      <div className="grid h-10 w-10 place-items-center rounded-lg bg-secondary transition-colors group-hover:bg-foreground group-hover:text-background">
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0">
         <div className="truncate text-sm font-medium">{title}</div>
         <div className="text-[11px] text-muted-foreground">{count}</div>
       </div>
-      <ArrowUpRight className="ml-auto h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground" />
+      <ArrowUpRight className="ml-auto h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-foreground" />
     </Link>
   );
 }

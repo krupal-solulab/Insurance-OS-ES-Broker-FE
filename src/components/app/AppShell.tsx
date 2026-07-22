@@ -27,6 +27,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const workflows = [
   { slug: "submission-matching", label: "Submission Market Matching", icon: Inbox, badge: "12" },
@@ -70,7 +71,7 @@ export function AppShell() {
   const crumbs = buildCrumbs(loc.pathname);
 
   return (
-    <div className="min-h-screen bg-[oklch(0.985_0.005_85)] text-foreground">
+    <div className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
         <Sidebar pathname={loc.pathname} />
         <div className="flex min-h-screen flex-1 flex-col">
@@ -85,11 +86,13 @@ export function AppShell() {
       {!copilotOpen && (
         <button
           onClick={() => setCopilotOpen(true)}
-          className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-3 text-sm font-medium text-background shadow-lg shadow-black/10 transition hover:opacity-90"
+          className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-3 text-sm font-medium text-background shadow-lg shadow-black/10 transition active:scale-[0.98] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <Sparkles className="h-4 w-4" />
           Ask Coverline AI
-          <kbd className="ml-1 rounded bg-white/15 px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
+          <kbd className="ml-1 rounded bg-background/15 px-1.5 py-0.5 font-mono text-[10px]">
+            ⌘K
+          </kbd>
         </button>
       )}
     </div>
@@ -144,7 +147,7 @@ function Sidebar({ pathname }: { pathname: string }) {
           decisions logged · 96.4% audit-clean
         </div>
         <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-background">
-          <div className="h-full w-[64%] bg-accent" />
+          <div className="h-full w-[64%] bg-accent transition-[width] duration-700 ease-out" />
         </div>
       </div>
     </aside>
@@ -176,7 +179,7 @@ function NavItem({
     <Link
       to={to}
       className={cn(
-        "group my-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-ink-soft transition-colors",
+        "group my-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-ink-soft transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         active ? "bg-foreground text-background" : "hover:bg-secondary hover:text-foreground",
       )}
     >
@@ -227,7 +230,7 @@ function TopBar({
       <div className="ml-auto flex items-center gap-3">
         <button
           onClick={onOpenCopilot}
-          className="hidden items-center gap-2 rounded-lg border border-border bg-secondary/60 px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-secondary md:inline-flex"
+          className="hidden items-center gap-2 rounded-lg border border-border bg-secondary/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:inline-flex"
         >
           <Search className="h-3.5 w-3.5" />
           Search or ask Coverline AI…
@@ -235,8 +238,9 @@ function TopBar({
             <Command className="mr-0.5 inline h-2.5 w-2.5" />K
           </kbd>
         </button>
+        <ThemeToggle />
         <button
-          className="relative rounded-lg border border-border p-2 hover:bg-secondary"
+          className="relative rounded-lg border border-border p-2 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           aria-label="Notifications"
         >
           <Bell className="h-4 w-4" />
@@ -289,10 +293,13 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
   ];
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/20" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-black/20 animate-in fade-in-0 duration-200"
+      onClick={onClose}
+    >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-full max-w-xl flex-col border-l border-border bg-background shadow-2xl"
+        className="flex h-full w-full max-w-xl flex-col border-l border-border bg-background shadow-2xl animate-in slide-in-from-right duration-300"
       >
         <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <Sparkles className="h-4 w-4 text-accent" />
@@ -302,7 +309,7 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
           </span>
           <button
             onClick={onClose}
-            className="ml-auto rounded-md p-1.5 hover:bg-secondary"
+            className="ml-auto rounded-md p-1.5 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -328,10 +335,10 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
               hit ratio holding at <b>38%</b>. Consider prioritizing their queue.
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <button className="rounded-md border border-border bg-secondary px-2.5 py-1.5">
+              <button className="rounded-md border border-border bg-secondary px-2.5 py-1.5 transition-colors hover:bg-secondary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                 Open agent view
               </button>
-              <button className="rounded-md border border-border bg-secondary px-2.5 py-1.5">
+              <button className="rounded-md border border-border bg-secondary px-2.5 py-1.5 transition-colors hover:bg-secondary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                 Draft thank-you
               </button>
             </div>
@@ -345,7 +352,7 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
                 <button
                   key={p}
                   onClick={() => setMsg(p)}
-                  className="rounded-full border border-border bg-secondary/50 px-3 py-1.5 text-xs hover:bg-secondary"
+                  className="rounded-full border border-border bg-secondary/50 px-3 py-1.5 text-xs transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   {p}
                 </button>
@@ -354,7 +361,7 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
           </div>
         </div>
         <div className="border-t border-border p-4">
-          <div className="flex items-end gap-2 rounded-xl border border-border bg-background p-2">
+          <div className="flex items-end gap-2 rounded-xl border border-border bg-background p-2 transition-[box-shadow] focus-within:ring-2 focus-within:ring-ring">
             <textarea
               value={msg}
               onChange={(e) => setMsg(e.target.value)}
@@ -362,14 +369,14 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
               className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none"
               rows={2}
             />
-            <button className="grid h-9 w-9 place-items-center rounded-lg bg-foreground text-background">
+            <button className="grid h-9 w-9 place-items-center rounded-lg bg-foreground text-background transition active:scale-[0.98] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
               <Send className="h-4 w-4" />
             </button>
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
             <span>Powered by Extraction Core + Decision Core · citations included</span>
             <a
-              className="inline-flex items-center gap-1 hover:text-foreground"
+              className="inline-flex items-center gap-1 rounded transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               href="/app/assistant"
             >
               Open full assistant <ArrowUpRight className="h-3 w-3" />

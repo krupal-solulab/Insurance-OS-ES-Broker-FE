@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/accordion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Reveal } from "./Reveal";
 import { AuthDialog } from "./AuthDialog";
 import { useInView } from "@/hooks/use-in-view";
@@ -79,6 +80,7 @@ function Nav({ onOpenAuth }: { onOpenAuth: (mode: "login" | "signup") => void })
           })}
         </nav>
         <div className="hidden items-center gap-6 md:flex">
+          <ThemeToggle />
           <button
             type="button"
             onClick={() => onOpenAuth("login")}
@@ -88,14 +90,17 @@ function Nav({ onOpenAuth }: { onOpenAuth: (mode: "login" | "signup") => void })
           </button>
           <DemoLinkButton>Book a demo</DemoLinkButton>
         </div>
-        <button
-          className="cursor-pointer rounded-sm md:hidden focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          aria-label="Toggle menu"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-        >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        <div className="flex items-center gap-3 md:hidden">
+          <ThemeToggle />
+          <button
+            className="cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            aria-label="Toggle menu"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
       {open && (
         <div className="rule-t bg-background md:hidden">
@@ -130,8 +135,8 @@ function Nav({ onOpenAuth }: { onOpenAuth: (mode: "login" | "signup") => void })
 
 function Hero() {
   return (
-    <section className="relative overflow-hidden">
-      <div className="mx-auto max-w-7xl px-5 pb-20 pt-16 md:px-8 md:pb-28 md:pt-24">
+    <section className="relative overflow-hidden bg-[radial-gradient(ellipse_at_top_right,color-mix(in_oklch,var(--color-accent)_12%,transparent)_0%,transparent_60%)]">
+      <div className="relative mx-auto max-w-7xl px-5 pb-20 pt-16 md:px-8 md:pb-28 md:pt-24">
         <Reveal>
           <Eyebrow num="00 /">Built for wholesale &amp; E&amp;S brokers</Eyebrow>
         </Reveal>
@@ -571,9 +576,9 @@ function Workflows() {
                   <AccordionItem
                     key={item.title}
                     value={item.title}
-                    className={`border-0 transition-shadow hover:shadow-sm ${
+                    className={`transition-shadow hover:shadow-sm ${
                       tier.tone === "now"
-                        ? "bg-foreground text-background"
+                        ? "border-2 border-accent/40 bg-accent/5"
                         : tier.tone === "next"
                           ? "border border-border bg-background"
                           : "border border-dashed border-border bg-transparent text-ink-soft"
@@ -585,24 +590,16 @@ function Workflows() {
                           <StatusBadge tone={tier.tone} />
                         </div>
                         <div className="font-serif text-xl tracking-[-0.01em]">{item.title}</div>
-                        <p
-                          className={`mt-3 text-sm leading-relaxed ${tier.tone === "now" ? "text-background/75" : "text-ink-soft"}`}
-                        >
-                          {item.blurb}
-                        </p>
+                        <p className="mt-3 text-sm leading-relaxed text-ink-soft">{item.blurb}</p>
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="px-6 pb-6">
-                      <dl
-                        className={`space-y-3 border-t pt-4 text-sm ${tier.tone === "now" ? "border-background/20" : "border-border"}`}
-                      >
+                      <dl className="space-y-3 border-t border-border pt-4 text-sm">
                         <div>
                           <dt className="label-eyebrow !text-[10px] opacity-70">
                             Inputs → Outputs
                           </dt>
-                          <dd
-                            className={`mt-1 leading-relaxed ${tier.tone === "now" ? "text-background/85" : "text-foreground"}`}
-                          >
+                          <dd className="mt-1 leading-relaxed text-foreground">
                             {item.inputs}{" "}
                             <ArrowRight aria-hidden="true" className="mx-1 inline h-3 w-3" />{" "}
                             {item.outputs}
@@ -610,11 +607,7 @@ function Workflows() {
                         </div>
                         <div>
                           <dt className="label-eyebrow !text-[10px] opacity-70">Who it's for</dt>
-                          <dd
-                            className={`mt-1 leading-relaxed ${tier.tone === "now" ? "text-background/85" : "text-foreground"}`}
-                          >
-                            {item.whoFor}
-                          </dd>
+                          <dd className="mt-1 leading-relaxed text-foreground">{item.whoFor}</dd>
                         </div>
                       </dl>
                     </AccordionContent>
@@ -692,10 +685,10 @@ function Security() {
     },
   ];
   return (
-    <section id="security" className="rule-t scroll-anchor bg-foreground text-background">
+    <section id="security" className="rule-t scroll-anchor bg-secondary/60">
       <div className="mx-auto max-w-7xl px-5 py-20 md:px-8 md:py-28">
         <Reveal className="max-w-3xl">
-          <div className="label-eyebrow flex items-center gap-3 !text-background/60">
+          <div className="label-eyebrow flex items-center gap-3">
             <span className="font-mono text-accent">05 /</span>
             <span>Security &amp; trust</span>
           </div>
@@ -709,12 +702,12 @@ function Security() {
         */}
         <div className="mt-14 grid gap-10 md:grid-cols-3">
           {blocks.map(({ icon: Icon, title, body }, i) => (
-            <Reveal key={title} delay={i * 90} className="border-t border-background/20 pt-6">
+            <Reveal key={title} delay={i * 90} className="border-t border-border pt-6">
               <Icon aria-hidden="true" className="h-5 w-5 text-accent" />
               <div className="mt-5 font-serif text-2xl leading-snug tracking-[-0.01em]">
                 {title}
               </div>
-              <p className="mt-3 text-sm leading-relaxed text-background/70">{body}</p>
+              <p className="mt-3 text-sm leading-relaxed text-ink-soft">{body}</p>
             </Reveal>
           ))}
         </div>

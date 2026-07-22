@@ -91,7 +91,7 @@ export function DemoPage() {
 
   if (status === "success") {
     return (
-      <div className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center px-5 text-center">
+      <div className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center px-5 text-center animate-in fade-in-0 duration-500">
         <div className="grid h-14 w-14 place-items-center rounded-full bg-success/10">
           <CheckCircle2 className="h-7 w-7 text-success" />
         </div>
@@ -111,7 +111,7 @@ export function DemoPage() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-2xl px-5 py-16 md:py-24">
+    <div className="mx-auto min-h-screen max-w-2xl px-5 py-16 md:py-24 animate-in fade-in-0 duration-500">
       <Link
         to="/"
         className="inline-flex items-center gap-2 text-sm text-ink-soft hover:text-foreground"

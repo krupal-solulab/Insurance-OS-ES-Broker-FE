@@ -83,7 +83,9 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={`rounded-2xl border border-border bg-background p-5 ${className}`}>
+    <section
+      className={`rounded-2xl border border-border bg-background p-5 shadow-sm ${className}`}
+    >
       {(title || actions) && (
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
@@ -114,7 +116,7 @@ function Chip({
   };
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${map[tone]}`}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${map[tone]}`}
     >
       {children}
     </span>
@@ -122,7 +124,8 @@ function Chip({
 }
 
 function Button({ children, variant = "secondary", className = "", ...p }: any) {
-  const base = "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition";
+  const base =
+    "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-[color,background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100";
   const styles: Record<string, string> = {
     primary: "bg-foreground text-background hover:opacity-90",
     secondary: "border border-border bg-background hover:bg-secondary",
@@ -189,7 +192,7 @@ function Tabs({
         <button
           key={t}
           onClick={() => onChange(t)}
-          className={`rounded-md px-3 py-1.5 transition ${value === t ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+          className={`rounded-md px-3 py-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${value === t ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
         >
           {t}
         </button>
@@ -291,7 +294,10 @@ function ProgressRow({ label, pct }: { label: string; pct: number }) {
         <span className="font-mono text-muted-foreground">{pct}%</span>
       </div>
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-secondary">
-        <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
+        <div
+          className="h-full bg-accent transition-[width] duration-700 ease-out"
+          style={{ width: `${pct}%` }}
+        />
       </div>
     </div>
   );
@@ -375,7 +381,7 @@ export function SubmissionMarketMatching() {
   }
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Workflow 01 · Built"
         title="Submission Market Matching"
@@ -880,7 +886,7 @@ function MatchRulesTab({ insured, state }: { insured: string; state: string }) {
           <button
             key={mk.carrier}
             onClick={() => setCarrier(mk.carrier)}
-            className={`rounded-full border px-3 py-1 text-xs transition ${
+            className={`rounded-full border px-3 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
               carrier === mk.carrier
                 ? "border-foreground bg-foreground text-background"
                 : "border-border bg-background hover:bg-secondary"
@@ -1758,7 +1764,7 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
   }
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Workflow 02"
         title="Submission Package Assembly"
@@ -2236,7 +2242,7 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
   }
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Workflow 03"
         title="Retail Agent Communication Copilot"
@@ -2260,7 +2266,7 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
               <button
                 key={t.id}
                 onClick={() => setActive(t.id)}
-                className={`flex w-full flex-col gap-1 p-3 text-left ${active === t.id ? "bg-secondary/60" : "hover:bg-secondary/30"}`}
+                className={`flex w-full flex-col gap-1 p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${active === t.id ? "bg-secondary/60" : "hover:bg-secondary/30"}`}
               >
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>
@@ -2789,7 +2795,7 @@ export function QuoteComparison() {
   }
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Workflow 04"
         title="Quote Comparison & Recommendation"
@@ -2903,7 +2909,10 @@ export function QuoteComparison() {
               </thead>
               <tbody className="divide-y divide-border">
                 {quotes.map((q) => (
-                  <tr key={q.carrier} className={q.status === "Declined" ? "opacity-50" : ""}>
+                  <tr
+                    key={q.carrier}
+                    className={`transition-colors hover:bg-secondary/40 ${q.status === "Declined" ? "opacity-50" : ""}`}
+                  >
                     <td className="py-2.5 font-medium">{q.carrier}</td>
                     <td className="py-2.5 text-right font-mono">{q.premium}</td>
                     <td className="py-2.5 text-right font-mono">{q.deductible}</td>
@@ -3374,7 +3383,7 @@ export function BinderIssuance() {
   ];
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Workflow 05"
         title="Binder & Policy Issuance Coordination"
@@ -3401,7 +3410,7 @@ export function BinderIssuance() {
               <button
                 key={r.id}
                 onClick={() => setSel(r.id)}
-                className={`w-full py-3 text-left ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
+                className={`w-full py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
               >
                 <div className="flex items-center justify-between text-sm">
                   <span className="font-medium">{r.insured}</span>
@@ -3831,7 +3840,7 @@ export function EndorsementProcessing() {
   }
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Workflow 06"
         title="Endorsement / Mid-Term Change Processing"
@@ -3845,7 +3854,7 @@ export function EndorsementProcessing() {
               <button
                 key={r.id}
                 onClick={() => setSel(r.id)}
-                className={`w-full py-3 text-left ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
+                className={`w-full py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
               >
                 <div className="flex items-center justify-between text-sm">
                   <span className="font-medium">{r.insured}</span>
@@ -4347,7 +4356,7 @@ export function RenewalRemarketing() {
           : "danger";
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Workflow 07"
         title="Renewal Remarketing"
@@ -4366,7 +4375,7 @@ export function RenewalRemarketing() {
               <button
                 key={row.id}
                 onClick={() => setSelected(row.id)}
-                className={`flex w-full flex-col gap-1 py-3 text-left transition ${selected === row.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
+                className={`flex w-full flex-col gap-1 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${selected === row.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
               >
                 <div className="flex items-center justify-between text-sm">
                   <span className="font-medium">{row.insured}</span>
@@ -4647,7 +4656,7 @@ export function RenewalRemarketing() {
                         return (
                           <tr
                             key={q.carrier}
-                            className={q.status === "Declined" ? "opacity-50" : ""}
+                            className={`transition-colors hover:bg-secondary/40 ${q.status === "Declined" ? "opacity-50" : ""}`}
                           >
                             <td className="py-2.5 font-medium">
                               <div className="flex items-center gap-2">
@@ -4760,7 +4769,7 @@ export function DiligentSearchCompliance() {
   const canGenerate = unsatisfiedStates.length === 0;
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Workflow 08"
         title="Diligent Search & Compliance Documentation"
@@ -4797,7 +4806,7 @@ export function DiligentSearchCompliance() {
                     setSel(r.id);
                     setSelState(null);
                   }}
-                  className={`w-full py-3 text-left ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
+                  className={`w-full py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
                 >
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">{r.insured}</span>
@@ -4864,7 +4873,7 @@ export function DiligentSearchCompliance() {
                 <li key={s.state}>
                   <button
                     onClick={() => setSelState(s.state)}
-                    className={`flex w-full items-start justify-between gap-3 p-3 text-left text-sm ${s.state === activeStateName ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
+                    className={`flex w-full items-start justify-between gap-3 p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${s.state === activeStateName ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
                   >
                     <div>
                       <div className="font-medium">{s.state}</div>
@@ -5090,7 +5099,7 @@ export function CarrierAppetiteIntelligence() {
   }
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Workflow 09"
         title="Carrier Appetite Intelligence Tracking"
@@ -5290,7 +5299,7 @@ export function PipelineCarrierReporting() {
   const remarketGap = pipelineCompleteness.find((w) => w.workflow === "Renewal Remarketing");
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
         eyebrow="Workflow 10"
         title="Pipeline & Carrier Performance Reporting"
@@ -5402,7 +5411,7 @@ export function PipelineCarrierReporting() {
                 <div className="w-40 shrink-0 text-xs text-muted-foreground">{f.stage}</div>
                 <div className="h-6 flex-1 overflow-hidden rounded-md bg-secondary">
                   <div
-                    className="flex h-full items-center justify-end bg-accent px-2 text-[10px] font-mono text-accent-foreground"
+                    className="flex h-full items-center justify-end bg-accent px-2 text-[10px] font-mono text-accent-foreground transition-[width] duration-700 ease-out"
                     style={{ width: `${(f.count / max) * 100}%` }}
                   >
                     {f.count}
@@ -5425,7 +5434,7 @@ export function PipelineCarrierReporting() {
                   <div className="w-8">{s.state}</div>
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
                     <div
-                      className="h-full bg-foreground"
+                      className="h-full bg-foreground transition-[width] duration-700 ease-out"
                       style={{ width: `${(s.premium / max2) * 100}%` }}
                     />
                   </div>
@@ -5453,11 +5462,11 @@ export function PipelineCarrierReporting() {
             </thead>
             <tbody className="divide-y divide-border">
               {carrierPerformance.map((c) => (
-                <tr key={c.carrier} className="hover:bg-secondary/40">
+                <tr key={c.carrier} className="transition-colors hover:bg-secondary/40">
                   <td className="py-2.5 font-medium">{c.carrier}</td>
-                  <td className="py-2.5 text-right">{c.submissions}</td>
-                  <td className="py-2.5 text-right">{c.quoted}</td>
-                  <td className="py-2.5 text-right">{c.bound}</td>
+                  <td className="py-2.5 text-right tabular-nums">{c.submissions}</td>
+                  <td className="py-2.5 text-right tabular-nums">{c.quoted}</td>
+                  <td className="py-2.5 text-right tabular-nums">{c.bound}</td>
                   <td className="py-2.5 text-right font-mono">{c.hitRate}</td>
                   <td className="py-2.5 text-right font-mono">{c.avgTurnaround}</td>
                   <td className="py-2.5 text-right font-mono">{c.premium}</td>
@@ -5511,11 +5520,11 @@ export function PipelineCarrierReporting() {
             </thead>
             <tbody className="divide-y divide-border">
               {retailAgents.map((a) => (
-                <tr key={a.agency} className="hover:bg-secondary/40">
+                <tr key={a.agency} className="transition-colors hover:bg-secondary/40">
                   <td className="py-2.5 font-medium">{a.agency}</td>
-                  <td className="py-2.5 text-right">{a.submissions}</td>
-                  <td className="py-2.5 text-right">{a.packaged}</td>
-                  <td className="py-2.5 text-right">{a.bound}</td>
+                  <td className="py-2.5 text-right tabular-nums">{a.submissions}</td>
+                  <td className="py-2.5 text-right tabular-nums">{a.packaged}</td>
+                  <td className="py-2.5 text-right tabular-nums">{a.bound}</td>
                   <td className="py-2.5 text-right font-mono">{a.hitRate}</td>
                   <td className="py-2.5 text-right font-mono">{a.avgResponseTime}</td>
                 </tr>
