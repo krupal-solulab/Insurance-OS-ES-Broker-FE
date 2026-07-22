@@ -7,12 +7,20 @@ import {
   Layers,
   ArrowRight,
   CheckCircle2,
+  AlertTriangle,
   Send,
   Download,
   Mail,
 } from "lucide-react";
 import { PageHeader } from "./AppShell";
-import { Panel } from "./Workflows";
+import { Panel, Chip, Tabs } from "./Workflows";
+import {
+  carrierPerformance,
+  retailAgents,
+  stateMix,
+  pipelineCompleteness,
+  placementCycle,
+} from "./mocks";
 import { useState } from "react";
 
 const extractionCaps = [
@@ -267,6 +275,12 @@ export function AssistantPage() {
     "Explain why Northwind Wood Products has no market",
     "Compare the 3 carrier quotes on Highline Hospitality",
     "Draft a no-market notice to Gallagher on Highline",
+    "Show binders awaiting carrier confirmation",
+    "Flag any bind/issuance term discrepancies on Cedar Grove Assisted Living",
+    "Which policies are overdue for document delivery?",
+    "Summarize the mid-term change on Ridgeline Contractors and its appetite recheck",
+    "Which endorsements are pending carrier issuance?",
+    "Show endorsement reconciliation discrepancies",
     "Explain the diligent search status for Bayou Marine Services",
     "Which carriers are trending toward tighter appetite this month?",
     "Identify missing documents on SUB-24017",
@@ -288,9 +302,10 @@ export function AssistantPage() {
                 <Sparkles className="h-3 w-3 text-accent" /> Coverline AI
               </div>
               <p>
-                Good morning Sam. You have 12 submissions awaiting review, 7 renewals up for
-                remarket review in the next 30 days, and 2 diligent-search records waiting on
-                declination evidence. What would you like to work on?
+                Good morning Sam. You have 12 submissions awaiting review, 4 packages in progress, 3
+                binders in issuance, 4 mid-term endorsements open, 7 renewals up for remarket review
+                in the next 30 days, and 2 diligent-search records waiting on declination evidence.
+                What would you like to work on?
               </p>
             </div>
             <div className="flex justify-end">
@@ -377,7 +392,87 @@ export function AssistantPage() {
    Analytics
    ============================================================ */
 
+const ANALYTICS_FUNNEL = [
+  { stage: "Submissions", count: 274 },
+  { stage: "Matched ≥1 market", count: 241 },
+  { stage: "Packaged", count: 198 },
+  { stage: "Quoted", count: 156 },
+  { stage: "Bound", count: 104 },
+];
+
+const CLASS_MIX: [string, number][] = [
+  ["Habitational", 26],
+  ["Contractors / excess", 21],
+  ["Hospitality / liquor liab.", 17],
+  ["Vacant property", 12],
+  ["Environmental", 10],
+  ["Other E&S", 14],
+];
+
+const ANALYTICS_PERIODS = ["Trailing 30 days", "Trailing 90 days", "Trailing 12 months", "YTD"];
+
+const LOW_VOLUME_NOTE =
+  "Low-volume annotation: cuts below 10 submissions/mo are flagged, not silently averaged in — same discipline as Pipeline & Carrier Reporting.";
+
+function analyticsCompleteness(rows: typeof pipelineCompleteness) {
+  return Math.round(rows.reduce((sum, r) => sum + r.completePct, 0) / rows.length);
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      {label}
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function AnalyticsPage() {
+  const [period, setPeriod] = useState(ANALYTICS_PERIODS[0]);
+  const [carrierFilter, setCarrierFilter] = useState("All carriers");
+  const [stateFilter, setStateFilter] = useState("All states");
+  const [classFilter, setClassFilter] = useState("All classes");
+
+  const overall = analyticsCompleteness(pipelineCompleteness);
+  const worst = [...pipelineCompleteness]
+    .filter((w) => w.gap)
+    .sort((a, b) => a.completePct - b.completePct)[0];
+
+  const filteredCarriers =
+    carrierFilter === "All carriers"
+      ? carrierPerformance
+      : carrierPerformance.filter((c) => c.carrier === carrierFilter);
+  const filteredStates =
+    stateFilter === "All states" ? stateMix : stateMix.filter((s) => s.state === stateFilter);
+  const filteredClasses =
+    classFilter === "All classes" ? CLASS_MIX : CLASS_MIX.filter(([n]) => n === classFilter);
+
+  const funnelMax = ANALYTICS_FUNNEL[0].count;
+  const carrierPremiumMax = Math.max(
+    ...carrierPerformance.map((c) => parseFloat(c.premium.replace(/[^0-9.]/g, ""))),
+  );
+  const stateMax = Math.max(...stateMix.map((s) => s.premium));
+
   return (
     <div className="mx-auto max-w-[1400px] animate-in fade-in-0 duration-500">
       <PageHeader
@@ -391,6 +486,53 @@ export function AnalyticsPage() {
           </button>
         }
       />
+
+      <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-secondary/40 p-4 text-sm">
+        <Tabs tabs={ANALYTICS_PERIODS} value={period} onChange={setPeriod} />
+        <FilterSelect
+          label="Carrier"
+          value={carrierFilter}
+          onChange={setCarrierFilter}
+          options={["All carriers", ...carrierPerformance.map((c) => c.carrier)]}
+        />
+        <FilterSelect
+          label="State"
+          value={stateFilter}
+          onChange={setStateFilter}
+          options={["All states", ...stateMix.map((s) => s.state)]}
+        />
+        <FilterSelect
+          label="Class"
+          value={classFilter}
+          onChange={setClassFilter}
+          options={["All classes", ...CLASS_MIX.map(([n]) => n)]}
+        />
+        <div className="ml-auto text-[11px] text-muted-foreground">
+          Illustrative sample data — filters narrow the cuts below; {period} is a label only (no
+          per-period dataset to recompute from).
+        </div>
+      </div>
+
+      <div
+        className={`mb-5 flex items-start gap-2 rounded-xl border-2 p-3 text-sm ${overall === 100 ? "border-success/40 bg-success/5" : "border-warn/40 bg-warn/5"}`}
+      >
+        {overall === 100 ? (
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+        ) : (
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <b>Data completeness</b>
+          <Chip tone={overall === 100 ? "success" : "warn"}>{overall}%</Chip>
+          <span>across all six source workflows.</span>
+          {worst && (
+            <span>
+              {worst.workflow} has the largest gap — {worst.gap}.
+            </span>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {[
           { l: "Bound YTD", v: "$48.2M" },
@@ -405,6 +547,7 @@ export function AnalyticsPage() {
           </div>
         ))}
       </div>
+
       <div className="mt-6 grid gap-5 lg:grid-cols-3">
         <Panel title="Placement cycle trend · rolling 12 mo" className="lg:col-span-2">
           <svg viewBox="0 0 600 220" className="h-56 w-full">
@@ -427,29 +570,175 @@ export function AnalyticsPage() {
               Target 2–3 days
             </text>
           </svg>
+          <div className="mt-2 text-[11px] text-muted-foreground">
+            Raw {placementCycle.raw}d · excludes {placementCycle.avgBrokerAgentDelay}d avg
+            broker/agent delay · target {placementCycle.target}.
+          </div>
         </Panel>
         <Panel title="Class mix">
           <ul className="space-y-2 text-sm">
-            {[
-              ["Habitational", 26],
-              ["Contractors / excess", 21],
-              ["Hospitality / liquor liab.", 17],
-              ["Vacant property", 12],
-              ["Environmental", 10],
-              ["Other E&S", 14],
-            ].map(([n, v]) => (
-              <li key={n as string} className="flex items-center gap-3">
+            {filteredClasses.map(([n, v]) => (
+              <li key={n} className="flex items-center gap-3">
                 <div className="w-32 text-xs">{n}</div>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
                   <div
                     className="h-full bg-foreground transition-[width] duration-700 ease-out"
-                    style={{ width: `${(v as number) * 2.5}%` }}
+                    style={{ width: `${v * 2.5}%` }}
                   />
                 </div>
                 <div className="w-8 text-right font-mono text-xs">{v}%</div>
               </li>
             ))}
           </ul>
+        </Panel>
+      </div>
+
+      <div className="mt-6 grid gap-5 lg:grid-cols-2">
+        <Panel title="Carrier mix" subtitle="Premium share by carrier">
+          <div className="space-y-2">
+            {filteredCarriers.map((c) => {
+              const value = parseFloat(c.premium.replace(/[^0-9.]/g, ""));
+              return (
+                <div key={c.carrier} className="flex items-center gap-3 text-xs">
+                  <div className="w-36 truncate">{c.carrier}</div>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
+                    <div
+                      className="h-full bg-accent transition-[width] duration-700 ease-out"
+                      style={{ width: `${(value / carrierPremiumMax) * 100}%` }}
+                    />
+                  </div>
+                  <div className="w-14 text-right font-mono">{c.premium}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 text-[10px] text-muted-foreground">{LOW_VOLUME_NOTE}</div>
+        </Panel>
+        <Panel title="Geography" subtitle="Premium by state · $M">
+          <div className="space-y-2">
+            {filteredStates.map((s) => (
+              <div key={s.state} className="flex items-center gap-3 text-xs">
+                <div className="w-8">{s.state}</div>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full bg-foreground transition-[width] duration-700 ease-out"
+                    style={{ width: `${(s.premium / stateMax) * 100}%` }}
+                  />
+                </div>
+                <div className="w-12 text-right font-mono">${s.premium.toFixed(1)}M</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 text-[10px] text-muted-foreground">{LOW_VOLUME_NOTE}</div>
+        </Panel>
+      </div>
+
+      <div className="mt-6 grid gap-5 lg:grid-cols-3">
+        <Panel
+          title="Submission → bound funnel"
+          className="lg:col-span-2"
+          subtitle={`${period} · 104 of 274 submissions bound (38.0%)`}
+        >
+          <div className="space-y-3 pt-2">
+            {ANALYTICS_FUNNEL.map((f) => (
+              <div key={f.stage} className="flex items-center gap-3 text-sm">
+                <div className="w-40 shrink-0 text-xs text-muted-foreground">{f.stage}</div>
+                <div className="h-6 flex-1 overflow-hidden rounded-md bg-secondary">
+                  <div
+                    className="flex h-full items-center justify-end bg-accent px-2 text-[10px] font-mono text-accent-foreground transition-[width] duration-700 ease-out"
+                    style={{ width: `${(f.count / funnelMax) * 100}%` }}
+                  >
+                    {f.count}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="Remarketing value">
+          <div className="space-y-3 text-sm">
+            <div className="rounded-lg border border-border p-3">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Accounts remarketed, {period}
+              </div>
+              <div className="mt-1 font-serif text-2xl">18</div>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Premium improvement captured
+              </div>
+              <div className="mt-1 font-serif text-2xl">$212k</div>
+              <div className="text-[11px] text-muted-foreground">
+                vs. incumbent's initial renewal indication
+              </div>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Retention on remarketed accounts
+              </div>
+              <div className="mt-1 font-serif text-2xl">78%</div>
+              <div className="text-[11px] text-muted-foreground">
+                Moved to a new market but stayed on the book
+              </div>
+            </div>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="mt-6 grid gap-5 lg:grid-cols-2">
+        <Panel title="Carrier hit-rate comparison">
+          <table className="w-full text-sm">
+            <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="py-2 text-left">Carrier</th>
+                <th className="py-2 text-right">Submissions</th>
+                <th className="py-2 text-right">Quoted</th>
+                <th className="py-2 text-right">Bound</th>
+                <th className="py-2 text-right">Hit ratio</th>
+                <th className="py-2 text-right">Avg turnaround</th>
+                <th className="py-2 text-right">Premium</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filteredCarriers.map((c) => (
+                <tr key={c.carrier} className="transition-colors hover:bg-secondary/40">
+                  <td className="py-2.5 font-medium">{c.carrier}</td>
+                  <td className="py-2.5 text-right tabular-nums">{c.submissions}</td>
+                  <td className="py-2.5 text-right tabular-nums">{c.quoted}</td>
+                  <td className="py-2.5 text-right tabular-nums">{c.bound}</td>
+                  <td className="py-2.5 text-right font-mono">{c.hitRate}</td>
+                  <td className="py-2.5 text-right font-mono">{c.avgTurnaround}</td>
+                  <td className="py-2.5 text-right font-mono">{c.premium}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+        <Panel title="Agency performance">
+          <table className="w-full text-sm">
+            <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="py-2 text-left">Agency</th>
+                <th className="py-2 text-right">Submissions</th>
+                <th className="py-2 text-right">Packaged</th>
+                <th className="py-2 text-right">Bound</th>
+                <th className="py-2 text-right">Hit ratio</th>
+                <th className="py-2 text-right">Avg response time</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {retailAgents.map((a) => (
+                <tr key={a.agency} className="transition-colors hover:bg-secondary/40">
+                  <td className="py-2.5 font-medium">{a.agency}</td>
+                  <td className="py-2.5 text-right tabular-nums">{a.submissions}</td>
+                  <td className="py-2.5 text-right tabular-nums">{a.packaged}</td>
+                  <td className="py-2.5 text-right tabular-nums">{a.bound}</td>
+                  <td className="py-2.5 text-right font-mono">{a.hitRate}</td>
+                  <td className="py-2.5 text-right font-mono">{a.avgResponseTime}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </Panel>
       </div>
     </div>

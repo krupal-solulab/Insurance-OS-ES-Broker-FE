@@ -100,7 +100,7 @@ export function Panel({
   );
 }
 
-function Chip({
+export function Chip({
   children,
   tone = "neutral",
 }: {
@@ -177,7 +177,7 @@ function FiltersRow({ items }: { items: string[] }) {
   );
 }
 
-function Tabs({
+export function Tabs({
   tabs,
   value,
   onChange,
