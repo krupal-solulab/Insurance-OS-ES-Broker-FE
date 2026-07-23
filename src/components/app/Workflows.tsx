@@ -1,6 +1,19 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import {
+  FIXTURE_SUBMISSION_REFS,
+  actOnMarketMatching,
+  getMarketMatching,
+  listMarketMatching,
+  runMarketMatching,
+  type CarrierMatchOut,
+  type DiligentSearchOut,
+  type ExcludedCarrierOut,
+  type MarketMatchingPayload,
+  type ReviewActionVerb,
+} from "@/lib/api/marketMatching";
 import {
   ArrowRight,
   CheckCircle2,
@@ -345,27 +358,67 @@ function Consistency({
 
 const RECOMMENDED_CARRIERS = ["Kinsale Insurance", "James River Insurance", "Ategrity Specialty"];
 
+const STATUS_LABEL: Record<string, string> = {
+  pending: "Pending review",
+  approved: "Approved",
+  overridden: "Overridden",
+  escalated: "Escalated",
+  sent: "Sent",
+  issued: "Issued",
+};
+
+const ACTION_LABEL: Record<ReviewActionVerb, string> = {
+  approve: "Approve",
+  override: "Override",
+  escalate: "Escalate",
+  send: "Send",
+  issue: "Issue",
+};
+
+function scorePct(score: number): number {
+  return Math.round(score * 100);
+}
+
+/** Derived only from fields the API actually returns (matches[]/excluded[]/diligent_search) —
+ * there is no top-level recommendation field in MarketMatchingPayload to read instead. */
+function deriveOutcome(payload: MarketMatchingPayload | null | undefined): {
+  label: string;
+  tone: "success" | "warn" | "danger";
+} {
+  if (!payload) return { label: "Not yet run", tone: "warn" };
+  if (payload.matches.length > 0) return { label: "Carriers matched", tone: "success" };
+  if (payload.excluded.length === 0 && payload.diligent_search.note === "not evaluated") {
+    return { label: "Missing ACORD — cannot evaluate", tone: "warn" };
+  }
+  return { label: "No market found", tone: "danger" };
+}
+
 export function SubmissionMarketMatching() {
   const navigate = useNavigate();
-  const [selected, setSelected] = useState<string>(submissions[0].id);
-  const s = submissions.find((x) => x.id === selected)!;
-  const [tab, setTab] = useState("Documents");
-  const [selectedCarriers, setSelectedCarriers] = useState<string[]>(RECOMMENDED_CARRIERS);
-  const [log, setLog] = useState<LogEntry[]>(() => [
-    {
-      at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      who: "AI (Matching/Ranking Core)",
-      what: `Ranked shortlist produced — ${submissionMarkets.filter((m) => m.fit !== "Out of appetite").length} of ${submissionMarkets.length} carriers in appetite`,
-      ctx: `${s.id} · ${s.insured}`,
-      conf: "94%",
-    },
-  ]);
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedCarriers, setSelectedCarriers] = useState<string[]>([]);
+  const [tab, setTab] = useState("Carrier ranking");
+  const [log, setLog] = useState<LogEntry[]>([]);
 
-  function toggleCarrier(carrier: string) {
-    setSelectedCarriers((prev) =>
-      prev.includes(carrier) ? prev.filter((c) => c !== carrier) : [...prev, carrier],
-    );
-  }
+  const listQuery = useQuery({
+    queryKey: ["market-matching", "list"],
+    queryFn: listMarketMatching,
+  });
+  const items = listQuery.data ?? [];
+  const selectedRow = items.find((i) => i.id === selectedId) ?? items[0];
+  const firstItemId = listQuery.data?.[0]?.id;
+
+  useEffect(() => {
+    if (!selectedId && firstItemId) setSelectedId(firstItemId);
+  }, [firstItemId, selectedId]);
+
+  const detailQuery = useQuery({
+    queryKey: ["market-matching", "detail", selectedRow?.id],
+    queryFn: () => getMarketMatching(selectedRow!.id),
+    enabled: Boolean(selectedRow?.id),
+  });
+  const payload = detailQuery.data?.payload;
 
   function appendLog(who: string, what: string, ctx: string, conf = "—") {
     setLog((prev) => [
@@ -380,852 +433,546 @@ export function SubmissionMarketMatching() {
     ]);
   }
 
+  function toggleCarrier(carrier: string) {
+    setSelectedCarriers((prev) =>
+      prev.includes(carrier) ? prev.filter((c) => c !== carrier) : [...prev, carrier],
+    );
+  }
+
+  const unrunRefs = FIXTURE_SUBMISSION_REFS.filter(
+    (ref) => !items.some((i) => i.submission_id === ref),
+  );
+
+  const runBatchMutation = useMutation({
+    mutationFn: async () => {
+      for (const ref of unrunRefs) await runMarketMatching(ref);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["market-matching", "list"] });
+      toast.success(
+        unrunRefs.length
+          ? `Ran matching for ${unrunRefs.length} fixture submission(s)`
+          : "All fixture submissions already run",
+      );
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Batch matching run failed");
+    },
+  });
+
+  const outcome = deriveOutcome(payload);
+
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Workflow 01 · Built"
+        eyebrow="Workflow 01 · Live"
         title="Submission Market Matching"
-        description="Email → extraction → carrier panel ranking → per-carrier missing-info check. Every retail submission, ranked against your whole panel, every time."
+        description="Wired to Backend-AI-OS's /api/es/market-matching — real ranked-carrier data from the Workflow_10 fixture set (submission_01..06). Sections the API has no data for yet say so explicitly rather than showing invented numbers."
         actions={
           <>
-            <Button variant="secondary">
+            <Button
+              variant="secondary"
+              disabled
+              title="Not wired — there's no submission-upload endpoint yet, this pass only runs the Workflow_10 fixtures"
+            >
               <Upload className="h-4 w-4" />
               Upload submission
             </Button>
-            <Button variant="primary">
-              <Sparkles className="h-4 w-4" />
-              Run batch matching
+            <Button
+              variant="primary"
+              disabled={runBatchMutation.isPending || unrunRefs.length === 0}
+              onClick={() => runBatchMutation.mutate()}
+            >
+              {runBatchMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {unrunRefs.length === 0
+                ? "All fixtures run"
+                : `Run batch matching (${unrunRefs.length})`}
             </Button>
           </>
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <FiltersRow items={["All open", "Strong fit", "Marginal fit", "Needs info", "No market"]} />
-        <div className="w-72">
-          <SearchBar placeholder="Search by insured, agent, id…" />
+      {listQuery.isLoading && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading submissions from Backend-AI-OS…
         </div>
-      </div>
+      )}
+      {listQuery.isError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          {listQuery.error instanceof Error
+            ? listQuery.error.message
+            : "Failed to load submissions."}
+        </div>
+      )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)]">
-        {/* Inbox */}
-        <Panel title="Submission inbox" subtitle="24 today · 12 awaiting review">
-          <div className="divide-y divide-border">
-            {submissions.map((row) => (
-              <button
-                key={row.id}
-                onClick={() => setSelected(row.id)}
-                className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
-                  selected === row.id ? "bg-secondary/50" : ""
-                }`}
-              >
-                <div
-                  className={`mt-1 h-2 w-2 shrink-0 rounded-full ${row.status === "New" || row.status === "Extracting" ? "bg-accent" : "bg-transparent"}`}
-                />
-                <div className="min-w-0 flex-1">
+      {!listQuery.isLoading && !listQuery.isError && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)]">
+          {/* Inbox */}
+          <Panel title="Submission inbox" subtitle={`${items.length} run · Workflow_10 fixtures`}>
+            {items.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No submissions run yet — click "Run batch matching" to process the fixture set.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
+                      selectedId === row.id ? "bg-secondary/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate font-mono text-sm">
+                        {row.submission_id ?? row.id}
+                      </span>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <Chip>{STATUS_LABEL[row.status] ?? row.status}</Chip>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          {/* Detail */}
+          {!selectedRow ? (
+            <Panel>
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                Select a submission from the inbox.
+              </div>
+            </Panel>
+          ) : (
+            <div className="space-y-5">
+              <Panel>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-mono text-muted-foreground">
+                      {selectedRow.id}
+                    </div>
+                    <h2 className="mt-1 font-serif text-2xl leading-tight">
+                      {selectedRow.submission_id ?? "Unknown submission"}
+                    </h2>
+                    <div className="mt-2 text-[11px] text-muted-foreground">
+                      Workflow_10 fixture — there's no submission-metadata endpoint yet, so only the
+                      ranking data below is real; insured/industry/state/TIV/premium aren't shown
+                      because the API has no such fields for this workflow.
+                    </div>
+                  </div>
                   <div className="flex items-center gap-2">
-                    <span className="truncate font-medium">{row.insured}</span>
-                    <span className="text-[11px] text-muted-foreground">{row.received}</span>
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-                    <span>{row.agency}</span>·<span>{row.state}</span>·
-                    <span className="font-mono">{row.premium}</span>
-                  </div>
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <Chip
-                      tone={
-                        row.appetite === "Strong fit"
-                          ? "success"
-                          : row.appetite === "Marginal fit"
-                            ? "warn"
-                            : "danger"
+                    <Button
+                      variant="primary"
+                      disabled={selectedCarriers.length === 0}
+                      title={
+                        selectedCarriers.length === 0
+                          ? "Select at least one carrier in Carrier ranking first"
+                          : undefined
                       }
+                      onClick={() => {
+                        appendLog(
+                          "You",
+                          `Selected ${selectedCarriers.length} carrier${selectedCarriers.length === 1 ? "" : "s"} for packaging — ${selectedCarriers.join(", ")}`,
+                          `${selectedRow.submission_id ?? selectedRow.id} · proceeding to Package Assembly`,
+                        );
+                        navigate({
+                          to: "/app/workflows/$slug",
+                          params: { slug: "package-assembly" },
+                          search: {
+                            submissionId: selectedRow.submission_id ?? selectedRow.id,
+                            carriers: selectedCarriers.join(","),
+                          },
+                        });
+                      }}
                     >
-                      {row.appetite}
-                    </Chip>
-                    <Chip>{row.status}</Chip>
-                    {row.score > 0 && (
-                      <Chip
-                        tone={row.score >= 80 ? "success" : row.score >= 60 ? "warn" : "danger"}
-                      >
-                        Score {row.score}
-                      </Chip>
-                    )}
+                      Proceed to package
+                      {selectedCarriers.length > 0 ? ` (${selectedCarriers.length})` : ""}{" "}
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
-              </button>
-            ))}
-          </div>
-        </Panel>
 
-        {/* Detail */}
-        <div className="space-y-5">
-          <Panel>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[11px] font-mono text-muted-foreground">{s.id}</div>
-                <h2 className="mt-1 font-serif text-2xl leading-tight">{s.insured}</h2>
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <Building2 className="h-3 w-3" />
-                    {s.industry}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <MapPin className="h-3 w-3" />
-                    {s.state}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
-                    Effective {s.effective}
-                  </span>
-                  <span>TIV {s.tiv}</span>
-                  <span>Est. premium {s.premium}</span>
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  <MetricTile
+                    label="Status"
+                    value={STATUS_LABEL[selectedRow.status] ?? selectedRow.status}
+                    sub="Review-item status"
+                    tone="success"
+                  />
+                  <MetricTile
+                    label="Top score"
+                    value={
+                      payload && payload.matches.length > 0
+                        ? scorePct(payload.matches[0].score).toString()
+                        : "—"
+                    }
+                    sub={
+                      payload?.matches[0] ? payload.matches[0].carrier_name : "No carrier matched"
+                    }
+                    tone={payload && payload.matches.length > 0 ? "success" : "warn"}
+                  />
+                  <MetricTile
+                    label="Outcome"
+                    value={outcome.label}
+                    sub={`${payload?.matches.length ?? 0} matched · ${payload?.excluded.length ?? 0} excluded`}
+                    tone={outcome.tone}
+                  />
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="secondary">Request info</Button>
-                <Button variant="danger">No market</Button>
-                <Button
-                  variant="primary"
-                  disabled={selectedCarriers.length === 0}
-                  title={
-                    selectedCarriers.length === 0
-                      ? "Select at least one carrier in Carrier ranking first"
-                      : undefined
-                  }
-                  onClick={() => {
-                    appendLog(
-                      "Sam D. (Broker)",
-                      `Selected ${selectedCarriers.length} carrier${selectedCarriers.length === 1 ? "" : "s"} for packaging — ${selectedCarriers.join(", ")}`,
-                      `${s.id} · proceeding to Package Assembly`,
-                    );
-                    navigate({
-                      to: "/app/workflows/$slug",
-                      params: { slug: "package-assembly" },
-                      search: { submissionId: s.id, carriers: selectedCarriers.join(",") },
-                    });
-                  }}
-                >
-                  Proceed to package
-                  {selectedCarriers.length > 0 ? ` (${selectedCarriers.length})` : ""}{" "}
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+              </Panel>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <MetricTile
-                label="Best-fit score"
-                value={s.score.toString()}
-                sub={`Top market · ${s.topMarket}`}
-                tone={s.score >= 80 ? "success" : "warn"}
-              />
-              <MetricTile
-                label="Panel fit"
-                value={s.appetite}
-                sub={`${s.marketsInAppetite} of 5 markets in appetite`}
-                tone={s.appetite === "Strong fit" ? "success" : "warn"}
-              />
-              <MetricTile
-                label="Recommendation"
-                value={s.recommendation}
-                sub="AI + broker co-sign"
-                tone={
-                  s.recommendation === "Proceed to market"
-                    ? "success"
-                    : s.recommendation === "No market"
-                      ? "danger"
-                      : "warn"
-                }
-              />
-            </div>
-          </Panel>
-
-          <ProcessAnim
-            steps={[
-              { label: "Email ingested from retail agent (Marsh Southeast)", kind: "extraction" },
-              { label: "6 attachments classified · 291 fields extracted", kind: "extraction" },
-              { label: "ACORD 125 / 140 parsed · loss run reconciled", kind: "extraction" },
-              { label: "Cross-document validation passed (0 conflicts)", kind: "extraction" },
-              { label: "Carrier panel ranked · 4 of 5 markets in appetite", kind: "matching" },
-              {
-                label: "Per-carrier missing-info identified · recommendation drafted",
-                kind: "matching",
-              },
-            ]}
-          />
-
-          <Panel>
-            <Tabs
-              tabs={[
-                "Documents",
-                "Carrier ranking",
-                "Match rules",
-                "AI recommendation",
-                "Activity",
-              ]}
-              value={tab}
-              onChange={setTab}
-            />
-            <div className="mt-5">
-              {tab === "Documents" && <DocumentsTab />}
-              {tab === "Carrier ranking" && (
-                <CarrierRankingTab
-                  selected={selectedCarriers}
-                  onToggle={toggleCarrier}
-                  insured={s.insured}
-                  state={s.state}
+              <Panel>
+                <Tabs
+                  tabs={[
+                    "Documents",
+                    "Carrier ranking",
+                    "Match rules",
+                    "AI recommendation",
+                    "Activity",
+                  ]}
+                  value={tab}
+                  onChange={setTab}
                 />
-              )}
-              {tab === "Match rules" && <MatchRulesTab insured={s.insured} state={s.state} />}
-              {tab === "AI recommendation" && (
-                <MatchRecommendationTab
-                  selected={selectedCarriers}
-                  onToggle={toggleCarrier}
-                  onLog={appendLog}
-                />
-              )}
-              {tab === "Activity" && <ActivityTab log={log} onLog={appendLog} submission={s} />}
+                <div className="mt-5">
+                  {detailQuery.isLoading && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading submission detail…
+                    </div>
+                  )}
+                  {detailQuery.isError && (
+                    <div className="flex items-center gap-2 text-sm text-destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      {detailQuery.error instanceof Error
+                        ? detailQuery.error.message
+                        : "Failed to load detail."}
+                    </div>
+                  )}
+                  {!detailQuery.isLoading && !detailQuery.isError && payload && (
+                    <>
+                      {tab === "Documents" && <DocumentsTab />}
+                      {tab === "Carrier ranking" && (
+                        <CarrierRankingTab
+                          matches={payload.matches}
+                          excluded={payload.excluded}
+                          diligentSearch={payload.diligent_search}
+                          selected={selectedCarriers}
+                          onToggle={toggleCarrier}
+                        />
+                      )}
+                      {tab === "Match rules" && <MatchRulesTab excluded={payload.excluded} />}
+                      {tab === "AI recommendation" && (
+                        <MatchRecommendationTab
+                          itemId={selectedRow.id}
+                          outcome={outcome}
+                          matchCount={payload.matches.length}
+                          excludedCount={payload.excluded.length}
+                          onActed={appendLog}
+                        />
+                      )}
+                      {tab === "Activity" && <ActivityTab log={log} />}
+                    </>
+                  )}
+                </div>
+              </Panel>
             </div>
-          </Panel>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
 function DocumentsTab() {
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_1.4fr]">
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-xs font-medium">6 documents · 291 fields extracted</div>
-          <FoundationBadge kind="extraction" />
-        </div>
-        <ul className="space-y-2 text-sm">
-          {submissionDocs.map((d) => (
-            <li
-              key={d.name}
-              className="flex items-center gap-3 rounded-lg border border-border p-3"
-            >
-              <div className="grid h-8 w-8 place-items-center rounded-md bg-secondary">
-                <FileText className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{d.name}</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {d.kind} · {d.pages}p · {d.extractedFields} fields
-                </div>
-              </div>
-              <div className="text-right">
-                <div
-                  className={`text-xs font-mono ${d.confidence > 0.95 ? "text-success" : d.confidence > 0.9 ? "text-warn" : "text-destructive"}`}
-                >
-                  {(d.confidence * 100).toFixed(0)}%
-                </div>
-                <div className="text-[10px] text-muted-foreground">confidence</div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div>
-        <div className="mb-2 text-xs font-medium">Document viewer · ACORD_125_Palmetto.pdf</div>
-        <div className="relative overflow-hidden rounded-lg border border-border bg-paper">
-          <div className="grid grid-cols-2 gap-6 p-6 font-mono text-[11px] text-ink-soft">
-            <div>
-              <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-                Named Insured
-              </div>
-              <div className="rounded bg-accent/15 px-1 py-0.5 text-foreground">
-                Palmetto Cold Storage LLC
-              </div>
-              <div className="mt-3 mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-                FEIN
-              </div>
-              <div className="rounded bg-accent/15 px-1 py-0.5 text-foreground">58-1298347</div>
-              <div className="mt-3 mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-                Mailing address
-              </div>
-              <div className="rounded bg-accent/15 px-1 py-0.5 text-foreground">
-                4210 Warehouse Rd, Jacksonville FL 32218
-              </div>
-              <div className="mt-3 mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-                Business type
-              </div>
-              <div className="rounded bg-accent/15 px-1 py-0.5 text-foreground">
-                Cold storage warehousing (NAICS 493120)
-              </div>
-            </div>
-            <div>
-              <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-                Effective / Expiration
-              </div>
-              <div className="rounded bg-accent/15 px-1 py-0.5 text-foreground">
-                02/12/2026 – 02/12/2027
-              </div>
-              <div className="mt-3 mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-                Prior carrier
-              </div>
-              <div className="rounded bg-accent/15 px-1 py-0.5 text-foreground">
-                Kinsale Insurance
-              </div>
-              <div className="mt-3 mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-                Prior premium
-              </div>
-              <div className="rounded bg-accent/15 px-1 py-0.5 text-foreground">$168,900</div>
-              <div className="mt-3 mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-                Annual revenue
-              </div>
-              <div className="rounded bg-accent/15 px-1 py-0.5 text-foreground">$41,200,000</div>
-            </div>
-          </div>
-          <div className="absolute right-3 top-3 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium text-accent">
-            42 fields highlighted
-          </div>
-        </div>
-        <div className="mt-2 text-[10px] text-muted-foreground">
-          Every highlighted field is a citation — click to jump to the source page.
-        </div>
-      </div>
+    <div className="rounded-xl border border-dashed border-border p-6 text-center">
+      <FileText className="mx-auto h-6 w-6 text-muted-foreground" />
+      <div className="mt-2 text-sm font-medium">Not available yet</div>
+      <p className="mx-auto mt-1 max-w-md text-[11px] text-muted-foreground">
+        Document list, extraction confidence, and field-level citations aren't exposed via the API
+        yet — <code>core.documents</code> and <code>core.extraction</code> are used internally by
+        the pipeline but have no GET route on the market-matching workflow today.
+      </p>
     </div>
   );
 }
 
 function CarrierRankingTab({
+  matches,
+  excluded,
+  diligentSearch,
   selected,
   onToggle,
-  insured,
-  state,
 }: {
+  matches: CarrierMatchOut[];
+  excluded: ExcludedCarrierOut[];
+  diligentSearch: DiligentSearchOut;
   selected: string[];
   onToggle: (carrier: string) => void;
-  insured: string;
-  state: string;
 }) {
-  const dsRecord = diligentSearch.find((d) => d.insured === insured);
-  const dsState = dsRecord?.states.find((s) => s.state === state);
   return (
     <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
       <div>
         <div className="mb-2 flex items-center justify-between">
           <div className="text-xs font-medium">
-            Ranked carrier panel · 4 of 5 in appetite · {selected.length} selected for packaging
+            {matches.length} of {matches.length + excluded.length} carriers in appetite ·{" "}
+            {selected.length} selected for packaging
           </div>
           <FoundationBadge kind="matching" />
         </div>
-        <ul className="space-y-2">
-          {submissionMarkets.map((m, i) => {
-            const selectable = m.fit !== "Out of appetite";
-            const isChecked = selected.includes(m.carrier);
-            return (
-              <li
-                key={m.carrier}
-                className={`rounded-lg border p-3 text-sm ${m.fit === "Out of appetite" ? "border-border opacity-60" : isChecked ? "border-accent/40 bg-accent/5" : "border-border"}`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    {selectable ? (
+        {matches.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+            No carrier on the current panel matched this submission's appetite data.
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {matches.map((m) => {
+              const isChecked = selected.includes(m.carrier_name);
+              return (
+                <li
+                  key={m.carrier_id}
+                  className={`rounded-lg border p-3 text-sm ${isChecked ? "border-accent/40 bg-accent/5" : "border-border"}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
                       <Checkbox
                         checked={isChecked}
-                        onCheckedChange={() => onToggle(m.carrier)}
-                        aria-label={`Select ${m.carrier} for packaging`}
+                        onCheckedChange={() => onToggle(m.carrier_name)}
+                        aria-label={`Select ${m.carrier_name} for packaging`}
                       />
-                    ) : (
-                      <span className="grid h-6 w-6 place-items-center rounded-full bg-secondary text-[11px] font-mono">
-                        {i + 1}
-                      </span>
-                    )}
-                    <span className="font-medium">{m.carrier}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Chip
-                      tone={
-                        m.fit === "Strong fit"
-                          ? "success"
-                          : m.fit === "Marginal fit"
-                            ? "warn"
-                            : "danger"
-                      }
-                    >
-                      {m.fit}
-                    </Chip>
-                    <span className="font-mono text-xs text-muted-foreground">{m.score}</span>
-                  </div>
-                </div>
-                <div className="mt-2 grid gap-1 text-[11px] text-muted-foreground sm:grid-cols-3">
-                  <span>Capacity: {m.capacity}</span>
-                  <span>Est. premium: {m.estPremium}</span>
-                  <span>Turnaround: {m.turnaround}</span>
-                </div>
-                <div className="mt-2 text-[11px]">
-                  {m.reasoningSource ? (
-                    <SourceCitation doc={m.reasoningSource.doc} page={m.reasoningSource.page}>
-                      {m.reasoning}
-                    </SourceCitation>
-                  ) : (
-                    <span className="text-muted-foreground">{m.reasoning}</span>
-                  )}
-                </div>
-                {m.missingInfo.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {m.missingInfo.map((mi) => (
-                      <Chip key={mi} tone="warn">
-                        <AlertTriangle className="h-2.5 w-2.5" />
-                        {mi}
-                      </Chip>
-                    ))}
-                  </div>
-                )}
-
-                {selectable && (
-                  <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-border pt-2 text-[11px]">
-                    <details className="min-w-0 flex-1">
-                      <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
-                        Requirements · {m.requirements.length - m.missingInfo.length} of{" "}
-                        {m.requirements.length} on file
-                      </summary>
-                      <ul className="mt-1.5 space-y-1 pl-1">
-                        {m.requirements.map((req) => {
-                          const missing = m.missingInfo.includes(req);
-                          return (
-                            <li key={req} className="flex items-center gap-1.5">
-                              {missing ? (
-                                <AlertTriangle className="h-3 w-3 shrink-0 text-warn" />
-                              ) : (
-                                <CheckCircle2 className="h-3 w-3 shrink-0 text-success" />
-                              )}
-                              <span
-                                className={missing ? "text-foreground" : "text-muted-foreground"}
-                              >
-                                {req}
-                              </span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </details>
-
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground">Diligent search:</span>
-                      {!m.diligentSearchRequired ? (
-                        <span className="text-muted-foreground">Not required</span>
-                      ) : dsState?.evidenceSufficient || dsState?.status === "Exempt" ? (
-                        <Chip tone="success">
-                          <CheckCircle2 className="h-2.5 w-2.5" />
-                          {dsState.status === "Exempt"
-                            ? "Exempt"
-                            : `Satisfied (${dsState.declinationsOnFile}/${dsState.requiredDeclinations})`}
-                        </Chip>
-                      ) : (
-                        <Chip tone="warn">
-                          <AlertTriangle className="h-2.5 w-2.5" />
-                          {dsState
-                            ? `Not yet — ${dsState.declinationsOnFile}/${dsState.requiredDeclinations}`
-                            : "Status unknown"}
-                        </Chip>
-                      )}
+                      <span className="font-medium">{m.carrier_name}</span>
                     </div>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {scorePct(m.score)}
+                    </span>
                   </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                  {m.flags.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {m.flags.map((f) => (
+                        <Chip key={f} tone="warn">
+                          <AlertTriangle className="h-2.5 w-2.5" />
+                          {f}
+                        </Chip>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
-      <div>
-        <div className="mb-2 text-xs font-medium">Why this ranking</div>
-        <div className="space-y-2 text-sm">
-          <Consistency
-            label="Class fit"
-            ok
-            detail="Cold storage / refrigerated warehousing is an actively sought class for the top 2 carriers"
-          />
-          <Consistency
-            label="Capacity fit"
-            ok
-            detail="$42.8M TIV sits well inside Kinsale's $50M treaty and James River's combined $50M layer"
-          />
-          <Consistency
-            label="Loss history"
-            ok
-            detail="38% 5yr loss ratio clears every panel carrier's threshold"
-          />
-          <Consistency
-            label="Missing info"
-            warn
-            detail="James River and Ategrity need supplemental docs before they'll firm a quote — routed to Package Assembly"
-          />
-          <Consistency
-            label="Palomar Specialty"
-            detail="Class-excluded per their current appetite profile — excluded automatically, not scored"
-          />
+      <div className="space-y-4">
+        <div>
+          <div className="mb-2 text-xs font-medium">Excluded from panel</div>
+          {excluded.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No carriers excluded.</div>
+          ) : (
+            <ul className="space-y-2">
+              {excluded.map((e) => (
+                <li key={e.carrier_id} className="rounded-lg border border-border p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{e.carrier_name}</span>
+                    <Chip tone="danger">{e.rule}</Chip>
+                  </div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">{e.reason}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-medium">Diligent search (MM-07)</div>
+          <div
+            className={`rounded-lg border p-3 text-sm ${diligentSearch.compliant ? "border-success/30 bg-success/5" : "border-warn/30 bg-warn/5"}`}
+          >
+            <div className="flex items-center gap-2">
+              {diligentSearch.compliant ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 shrink-0 text-warn" />
+              )}
+              <span className="font-medium">{diligentSearch.on_file} declination(s) on file</span>
+            </div>
+            <div className="mt-1 text-[11px] text-muted-foreground">{diligentSearch.note}</div>
+          </div>
+          <div className="mt-1 text-[10px] text-muted-foreground">
+            Computed once per submission, independent of carrier ranking — not per-state (no
+            per-state diligent-search reference data is returned by the API).
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function MatchRulesTab({ insured, state }: { insured: string; state: string }) {
-  const [carrier, setCarrier] = useState(submissionMarkets[0].carrier);
-  const m = submissionMarkets.find((x) => x.carrier === carrier)!;
-  const dsRecord = diligentSearch.find((d) => d.insured === insured);
-  const dsState = dsRecord?.states.find((s) => s.state === state);
-  const hardPassed = m.hardExclusions.every((h) => h.pass);
-  const scoreSum = m.softScoreFactors.reduce((sum, f) => sum + f.points, 0);
-
+function MatchRulesTab({ excluded }: { excluded: ExcludedCarrierOut[] }) {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <div className="text-xs font-medium">Matching engine · 3 passes, per carrier</div>
+        <div className="text-xs font-medium">
+          Hard-exclusion rules (MM-01..04) — why carriers didn't match
+        </div>
         <FoundationBadge kind="matching" />
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        {submissionMarkets.map((mk) => (
-          <button
-            key={mk.carrier}
-            onClick={() => setCarrier(mk.carrier)}
-            className={`rounded-full border px-3 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-              carrier === mk.carrier
-                ? "border-foreground bg-foreground text-background"
-                : "border-border bg-background hover:bg-secondary"
-            }`}
-          >
-            {mk.carrier}
-          </button>
-        ))}
+      <div className="mb-4 flex items-start gap-2 rounded-lg border border-dashed border-border p-3 text-[11px] text-muted-foreground">
+        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          The API returns the single deciding rule + reason for each excluded carrier, but not a
+          full per-check pass/fail breakdown for matched carriers, nor the soft-scoring factor
+          breakdown (severity margin, completeness, historical hit rate, appetite confidence) behind
+          the final composite score — those are computed internally in <code>decision_core</code>{" "}
+          but aren't part of <code>MarketMatchingPayload</code> today.
+        </span>
       </div>
 
-      <div className="space-y-4">
-        <div>
-          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Pass A · Hard exclusion — class code, state licensing, premium band
-          </div>
-          <ul className="divide-y divide-border rounded-lg border border-border">
-            {m.hardExclusions.map((h) => (
-              <li key={h.label} className="flex items-start gap-3 p-3 text-sm">
-                {h.pass ? (
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                ) : (
-                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                )}
-                <div className="flex-1">
-                  <div className="font-medium">{h.label}</div>
-                  <div className="text-[11px] text-muted-foreground">{h.detail}</div>
-                </div>
-                <Chip tone={h.pass ? "success" : "danger"}>{h.pass ? "Pass" : "Excluded"}</Chip>
-              </li>
-            ))}
-          </ul>
+      {excluded.length === 0 ? (
+        <div className="text-sm text-muted-foreground">
+          No carriers were excluded for this submission.
         </div>
-
-        <div>
-          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Pass B · Soft scoring — severity margin, completeness, hit rate, appetite confidence
-          </div>
-          {!hardPassed ? (
-            <div className="flex items-start gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
-              <Info className="mt-0.5 h-4 w-4 shrink-0" />
-              Not run — {m.carrier} was excluded at the hard-exclusion pass above, so soft scoring
-              never started.
-            </div>
-          ) : (
-            <ul className="divide-y divide-border rounded-lg border border-border">
-              {m.softScoreFactors.map((f) => (
-                <li key={f.label} className="flex items-start gap-3 p-3 text-sm">
-                  <div className="flex-1">
-                    <div className="font-medium">{f.label}</div>
-                    <div className="text-[11px] text-muted-foreground">{f.detail}</div>
-                  </div>
-                  <span className="font-mono text-xs text-success">+{f.points}</span>
-                </li>
-              ))}
-              <li className="flex items-center justify-between p-3 text-sm">
-                <span className="font-medium">Fit score</span>
-                <span className="font-mono text-sm">
-                  {scoreSum} <span className="text-muted-foreground">= {m.score}</span>
-                </span>
-              </li>
-            </ul>
-          )}
-        </div>
-
-        <div>
-          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Pass C · Diligent-search flag (MM-07) — independent of ranking outcome
-          </div>
-          {!m.diligentSearchRequired ? (
-            <div className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
-              Not required for this carrier's paper.
-            </div>
-          ) : dsState?.evidenceSufficient || dsState?.status === "Exempt" ? (
-            <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-foreground">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-              <div>
-                {dsState.status === "Exempt"
-                  ? "Exempt for this state/class."
-                  : `Satisfied — ${dsState.declinationsOnFile}/${dsState.requiredDeclinations} declinations on file with sufficient evidence.`}
-                <div className="mt-1 text-[11px] text-muted-foreground">
-                  This is checked independently and does not affect the fit score above — a carrier
-                  can be a strong fit while diligent search is still pending.
-                </div>
+      ) : (
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {excluded.map((e) => (
+            <li key={e.carrier_id} className="flex items-start gap-3 p-3 text-sm">
+              <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+              <div className="flex-1">
+                <div className="font-medium">{e.carrier_name}</div>
+                <div className="text-[11px] text-muted-foreground">{e.reason}</div>
               </div>
-            </div>
-          ) : (
-            <div className="flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-foreground">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-              <div>
-                {dsState
-                  ? `Not yet satisfied — ${dsState.declinationsOnFile}/${dsState.requiredDeclinations} declinations on file.`
-                  : "Status unknown."}
-                <div className="mt-1 text-[11px] text-muted-foreground">
-                  This is checked independently and does not affect the fit score above.
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+              <Chip tone="danger">{e.rule}</Chip>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
 function MatchRecommendationTab({
-  selected,
-  onToggle,
-  onLog,
+  itemId,
+  outcome,
+  matchCount,
+  excludedCount,
+  onActed,
 }: {
-  selected: string[];
-  onToggle: (carrier: string) => void;
-  onLog: (who: string, what: string, ctx: string, conf?: string) => void;
+  itemId: string;
+  outcome: { label: string; tone: "success" | "warn" | "danger" };
+  matchCount: number;
+  excludedCount: number;
+  onActed: (who: string, what: string, ctx: string) => void;
 }) {
-  const [overrideCarrier, setOverrideCarrier] = useState("");
-  const [overrideNote, setOverrideNote] = useState("");
-  const [overrideConfirmed, setOverrideConfirmed] = useState(false);
-  const overridable = submissionMarkets.filter((m) => m.fit !== "Out of appetite");
+  const queryClient = useQueryClient();
+  const [pendingAction, setPendingAction] = useState<ReviewActionVerb | null>(null);
 
-  function confirmOverride() {
-    if (!overrideCarrier || !overrideNote.trim()) return;
-    if (!selected.includes(overrideCarrier)) onToggle(overrideCarrier);
-    onLog(
-      "Sam D. (Broker)",
-      `Override — selected ${overrideCarrier} ahead of the AI ranking`,
-      `Rationale: "${overrideNote.trim()}"`,
-    );
-    setOverrideConfirmed(true);
-    setOverrideCarrier("");
-    setOverrideNote("");
-    setTimeout(() => setOverrideConfirmed(false), 2500);
-  }
+  const actMutation = useMutation({
+    mutationFn: (action: ReviewActionVerb) => actOnMarketMatching(itemId, action),
+    onMutate: (action) => setPendingAction(action),
+    onSuccess: (item, action) => {
+      onActed(
+        "You",
+        `${ACTION_LABEL[action]} — POST /api/es/market-matching/${itemId}/${action}`,
+        `Review item now "${item.status}"`,
+      );
+      toast.success(`${ACTION_LABEL[action]} succeeded`);
+      queryClient.invalidateQueries({ queryKey: ["market-matching", "list"] });
+      queryClient.invalidateQueries({ queryKey: ["market-matching", "detail", itemId] });
+    },
+    onError: (err: unknown, action) => {
+      toast.error(err instanceof Error ? err.message : `${ACTION_LABEL[action]} failed`);
+    },
+    onSettled: () => setPendingAction(null),
+  });
+
+  const toneClass =
+    outcome.tone === "success"
+      ? "border-success/40 bg-success/5"
+      : outcome.tone === "warn"
+        ? "border-warn/40 bg-warn/5"
+        : "border-destructive/40 bg-destructive/5";
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
-      <div className="rounded-xl border-2 border-success/40 bg-success/5 p-4 md:col-span-2">
+      <div className={`rounded-xl border-2 p-4 md:col-span-2 ${toneClass}`}>
         <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-5 w-5 text-success" />
-          <div className="font-serif text-xl">Proceed to market</div>
-          <Chip tone="success">94% confidence</Chip>
+          {outcome.tone === "success" ? (
+            <CheckCircle2 className="h-5 w-5 text-success" />
+          ) : (
+            <AlertTriangle className="h-5 w-5 text-warn" />
+          )}
+          <div className="font-serif text-xl">{outcome.label}</div>
         </div>
         <p className="mt-3 text-sm text-foreground">
-          Palmetto Cold Storage is a well-protected FL warehousing risk with a clean 5-year loss
-          history (38% LR), 92% sprinklered TIV, and revenue growth of 11% CAGR. Four of five panel
-          carriers are in appetite; Kinsale Insurance is the strongest fit with no outstanding
-          missing info. Recommend packaging for Kinsale, James River, and Ategrity in parallel to
-          maximize competitive tension.
+          {matchCount} carrier(s) matched, {excludedCount} excluded on the current panel — derived
+          directly from <code>GET /api/es/market-matching/{itemId}</code>.
         </p>
-        <div className="mt-4 grid gap-2 text-xs text-muted-foreground">
-          <div>
-            <b className="text-foreground">Suggested package priority:</b> Kinsale Insurance (ready
-            now) → James River Insurance (needs sprinkler inspection) → Ategrity Specialty (needs
-            loss run addendum + monitoring cert).
-          </div>
-          <div>
-            <b className="text-foreground">Suggested subjectivities to pre-empt:</b> updated
-            sprinkler inspection, confirmation of continuous refrigeration monitoring.
-          </div>
-        </div>
-
-        <div className="mt-5 rounded-lg border border-dashed border-border bg-background p-3">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Override ranking — broker judgment overrules the AI
-          </div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            Select any carrier from the panel, including one the AI ranked lower, and explain why.
-            This adds the carrier to your packaging selection and is written to the activity log.
-          </p>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <select
-              value={overrideCarrier}
-              onChange={(e) => setOverrideCarrier(e.target.value)}
-              className="rounded-lg border border-border bg-background p-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring sm:w-56"
-            >
-              <option value="">Select a carrier…</option>
-              {overridable.map((m) => (
-                <option key={m.carrier} value={m.carrier}>
-                  {m.carrier} · fit {m.score}
-                </option>
-              ))}
-            </select>
-            <textarea
-              value={overrideNote}
-              onChange={(e) => setOverrideNote(e.target.value)}
-              placeholder="Required — why override the AI ranking? (e.g. broker relationship, capacity need, timing)"
-              rows={1}
-              className="flex-1 resize-none rounded-lg border border-border bg-background p-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <Button
-              variant="secondary"
-              disabled={!overrideCarrier || !overrideNote.trim()}
-              title={
-                !overrideCarrier || !overrideNote.trim()
-                  ? "Select a carrier and add a rationale note first"
-                  : undefined
-              }
-              onClick={confirmOverride}
-            >
-              Confirm override
-            </Button>
-            {overrideConfirmed && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-success">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Logged to Activity
-              </span>
-            )}
-          </div>
-        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          There's no LLM-drafted narrative shown here: the pipeline computes one internally via{" "}
+          <code>core.llm</code> (see <code>service.py</code>'s <code>draft()</code>), but it isn't
+          persisted or returned by this endpoint today — so this summary is a plain client-side
+          count, not the AI's own written recommendation.
+        </p>
       </div>
       <div className="rounded-xl border border-border p-4">
         <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          Broker decision
+          Review action
         </div>
         <div className="mt-3 space-y-2 text-sm">
-          <Button
-            variant="primary"
-            className="w-full justify-center"
-            onClick={() =>
-              onLog(
-                "Sam D. (Broker)",
-                "Approved AI recommendation — proceed to market",
-                "SUB-24019 · Palmetto Cold Storage",
-              )
-            }
-          >
-            Approve recommendation
-          </Button>
-          <Button
-            variant="secondary"
-            className="w-full justify-center"
-            onClick={() =>
-              onLog(
-                "Sam D. (Broker)",
-                "Requested changes to carrier selection",
-                "SUB-24019 · Palmetto Cold Storage",
-              )
-            }
-          >
-            Modify carrier selection
-          </Button>
-          <Button
-            variant="secondary"
-            className="w-full justify-center"
-            onClick={() =>
-              onLog("Sam D. (Broker)", "Sent to peer review", "SUB-24019 · Palmetto Cold Storage")
-            }
-          >
-            Send to peer review
-          </Button>
-          <Button
-            variant="danger"
-            className="w-full justify-center"
-            onClick={() =>
-              onLog("Sam D. (Broker)", "Override — no market", "SUB-24019 · Palmetto Cold Storage")
-            }
-          >
-            Override — no market
-          </Button>
+          {(["approve", "escalate", "override", "send", "issue"] as ReviewActionVerb[]).map(
+            (action) => (
+              <Button
+                key={action}
+                variant={
+                  action === "approve" ? "primary" : action === "override" ? "danger" : "secondary"
+                }
+                className="w-full justify-center"
+                disabled={actMutation.isPending}
+                onClick={() => actMutation.mutate(action)}
+              >
+                {pendingAction === action && <Loader2 className="h-4 w-4 animate-spin" />}
+                {ACTION_LABEL[action]}
+              </Button>
+            ),
+          )}
         </div>
         <div className="mt-4 text-[11px] text-muted-foreground">
-          Every decision, including overrides, is written to the audit log with a rationale prompt.
+          Junior role can approve/escalate; override/send/issue are senior/admin-only, enforced
+          server-side — expect a 403 toast here with the seeded junior demo user.
         </div>
       </div>
     </div>
   );
 }
 
-function ActivityTab({
-  log,
-  onLog,
-  submission,
-}: {
-  log: LogEntry[];
-  onLog: (who: string, what: string, ctx: string, conf?: string) => void;
-  submission: Submission;
-}) {
-  const [outcomeLogged, setOutcomeLogged] = useState(false);
-
-  function recordOutcome(outcome: "Quoted" | "Bound" | "Declined") {
-    onLog(
-      "Sam D. (Broker)",
-      `Recorded eventual outcome — ${outcome}`,
-      `${submission.id} · ${submission.topMarket}`,
-    );
-    setOutcomeLogged(true);
-    setTimeout(() => setOutcomeLogged(false), 2500);
-  }
-
+function ActivityTab({ log }: { log: LogEntry[] }) {
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-secondary/30 p-3">
-        <div className="text-[11px] text-muted-foreground">
-          Record the eventual outcome once it's known, so it's on the record alongside the shortlist
-          and the broker's selection.
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="secondary"
-            className="!py-1 !text-xs"
-            onClick={() => recordOutcome("Quoted")}
-          >
-            Quoted
-          </Button>
-          <Button
-            variant="secondary"
-            className="!py-1 !text-xs"
-            onClick={() => recordOutcome("Bound")}
-          >
-            Bound
-          </Button>
-          <Button
-            variant="secondary"
-            className="!py-1 !text-xs"
-            onClick={() => recordOutcome("Declined")}
-          >
-            Declined
-          </Button>
-          {outcomeLogged && <CheckCircle2 className="h-4 w-4 text-success" />}
-        </div>
-      </div>
-
       <ul className="divide-y divide-border">
-        {log.slice(0, 10).map((d, i) => (
-          <li key={i} className="flex items-start gap-3 py-3 text-sm">
-            <span className="font-mono text-xs text-muted-foreground">{d.at}</span>
-            <div className="flex-1">
-              <div>
-                <b>{d.who}</b> — {d.what}
-              </div>
-              <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
-            </div>
-            {d.conf !== "—" && <Chip tone="neutral">{d.conf}</Chip>}
+        {log.length === 0 ? (
+          <li className="py-6 text-center text-sm text-muted-foreground">
+            No activity yet this session.
           </li>
-        ))}
+        ) : (
+          log.slice(0, 20).map((d, i) => (
+            <li key={i} className="flex items-start gap-3 py-3 text-sm">
+              <span className="font-mono text-xs text-muted-foreground">{d.at}</span>
+              <div className="flex-1">
+                <div>
+                  <b>{d.who}</b> — {d.what}
+                </div>
+                <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+              </div>
+            </li>
+          ))
+        )}
       </ul>
       <div className="mt-3 text-[10px] text-muted-foreground">
-        This shortlist, selection, and outcome history is the foundation for Carrier Appetite
-        Intelligence (roadmap workflow #7) — v1 doesn't act on it yet, it's only logged here.
+        Session-local log only — not persisted or read from Backend-AI-OS's audit module (
+        <code>core.audit</code> isn't exposed via a route on this workflow yet).
       </div>
     </div>
   );
