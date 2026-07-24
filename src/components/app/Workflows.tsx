@@ -25,6 +25,17 @@ import {
   type PackageAssemblyPayload,
 } from "@/lib/api/packageAssembly";
 import {
+  FIXTURE_TRIGGERS,
+  actOnAgentCommunication,
+  complianceClear,
+  getAgentCommunication,
+  listAgentCommunication,
+  runAgentCommunication,
+  type AgentCommActionVerb,
+  type DraftCommunicationOut,
+  type FixtureTrigger,
+} from "@/lib/api/agentCommunication";
+import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
@@ -2271,6 +2282,364 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
           </div>
         </Panel>
       </div>
+
+      <LiveDraftsSection />
+    </div>
+  );
+}
+
+const AGENT_ACTION_LABEL: Record<AgentCommActionVerb, string> = {
+  approve: "Approve",
+  edit: "Log edit",
+  send: "Mark as sent",
+  discard: "Discard",
+};
+
+function DraftStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; tone: "success" | "warn" | "danger" | "neutral" }> = {
+    DRAFT: { label: "Draft", tone: "neutral" },
+    UNDER_COMPLIANCE_REVIEW: { label: "Under compliance review", tone: "warn" },
+    APPROVED: { label: "Approved", tone: "success" },
+    SENT: { label: "Sent", tone: "success" },
+    DISCARDED: { label: "Discarded", tone: "danger" },
+  };
+  const { label, tone } = map[status] ?? { label: status, tone: "neutral" as const };
+  return <Chip tone={tone}>{label}</Chip>;
+}
+
+function LiveDraftCard({
+  itemId,
+  payload,
+  onActed,
+}: {
+  itemId: string;
+  payload: DraftCommunicationOut;
+  onActed: (who: string, what: string, ctx: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [pendingAction, setPendingAction] = useState<AgentCommActionVerb | null>(null);
+  const [pendingClear, setPendingClear] = useState(false);
+  const gated = payload.requires_compliance_review;
+  const who = payload.named_insured ?? payload.submission_id ?? itemId;
+
+  const actionMutation = useMutation({
+    mutationFn: (action: AgentCommActionVerb) => actOnAgentCommunication(itemId, action),
+    onMutate: (action: AgentCommActionVerb) => setPendingAction(action),
+    onSuccess: (item, action) => {
+      onActed(
+        "You",
+        `${AGENT_ACTION_LABEL[action]} — POST /api/es/agent-communication/${itemId}/${action}`,
+        `${who} → status "${item.status}"`,
+      );
+      toast.success(`${AGENT_ACTION_LABEL[action]} succeeded`);
+      queryClient.invalidateQueries({ queryKey: ["agent-communication"] });
+    },
+    onError: (err: unknown, action) => {
+      toast.error(err instanceof Error ? err.message : `${AGENT_ACTION_LABEL[action]} failed`);
+    },
+    onSettled: () => setPendingAction(null),
+  });
+
+  const clearMutation = useMutation({
+    mutationFn: () => complianceClear(itemId),
+    onMutate: () => setPendingClear(true),
+    onSuccess: () => {
+      onActed(
+        "You",
+        `Compliance-clear — POST /api/es/agent-communication/${itemId}/compliance-clear`,
+        who,
+      );
+      toast.success("Compliance gate cleared");
+      queryClient.invalidateQueries({ queryKey: ["agent-communication"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(
+        err instanceof Error ? err.message : "Compliance-clear failed (senior/admin only)",
+      );
+    },
+    onSettled: () => setPendingClear(false),
+  });
+
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-serif text-xl">{payload.subject_line}</h3>
+            <DraftStatusBadge status={payload.status} />
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {payload.trigger_type} · {who}
+            {payload.retail_agent_name
+              ? ` · ${payload.retail_agent_name} (${payload.retail_agency})`
+              : ""}
+          </div>
+        </div>
+        <FoundationBadge kind="matching" />
+      </div>
+
+      {gated && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-warn/40 bg-warn/10 p-3">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+          <div className="text-[12px] text-foreground">
+            <b>Requires compliance review</b> — carrier names are withheld until a senior/admin
+            clears this (RA-TN-06). This banner stays until cleared.
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center gap-2 text-[11px]">
+        <span className="text-muted-foreground">Carrier names disclosed:</span>
+        {payload.carrier_names_disclosed ? (
+          <Chip tone="success">
+            <CheckCircle2 className="h-2.5 w-2.5" />
+            Yes{payload.carrier_name ? ` — ${payload.carrier_name}` : ""}
+          </Chip>
+        ) : (
+          <Chip tone="neutral">No — aggregate framing only</Chip>
+        )}
+      </div>
+
+      <div className="mt-4 whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-sm">
+        {payload.body}
+      </div>
+
+      {payload.grounding_citations.length > 0 && (
+        <div className="mt-2 text-[11px] text-muted-foreground">
+          Grounded in:{" "}
+          {payload.grounding_citations.map((c) => `${c.claim} (${c.source_field})`).join("; ")}
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-secondary/30 p-3">
+        <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Nothing here transmits automatically — approve/send are manual logs only (FR-20).
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {gated && (
+            <Button
+              variant="secondary"
+              disabled={pendingClear}
+              onClick={() => clearMutation.mutate()}
+            >
+              {pendingClear && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Compliance-clear (senior/admin)
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            disabled={gated || actionMutation.isPending}
+            title={gated ? "Requires compliance-clear first" : undefined}
+            onClick={() => actionMutation.mutate("approve")}
+          >
+            {pendingAction === "approve" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Approve
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={gated || actionMutation.isPending}
+            title={gated ? "Requires compliance-clear first" : undefined}
+            onClick={() => actionMutation.mutate("send")}
+          >
+            {pendingAction === "send" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Mark as sent
+          </Button>
+          <Button
+            variant="danger"
+            disabled={actionMutation.isPending}
+            onClick={() => actionMutation.mutate("discard")}
+          >
+            {pendingAction === "discard" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Discard
+          </Button>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function LiveDraftsSection() {
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [log, setLog] = useState<LogEntry[]>([]);
+
+  const listQuery = useQuery({
+    queryKey: ["agent-communication", "list"],
+    queryFn: listAgentCommunication,
+  });
+  const items = listQuery.data ?? [];
+
+  const detailQuery = useQuery({
+    queryKey: ["agent-communication", "detail", selectedId],
+    queryFn: () => getAgentCommunication(selectedId!),
+    enabled: Boolean(selectedId),
+  });
+
+  function appendLog(who: string, what: string, ctx: string) {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf: "—",
+      },
+      ...prev,
+    ]);
+  }
+
+  const runMutation = useMutation({
+    mutationFn: (t: FixtureTrigger) => runAgentCommunication(t.trigger),
+    onSuccess: (item, t) => {
+      queryClient.invalidateQueries({ queryKey: ["agent-communication"] });
+      toast.success(
+        item.deduplicated
+          ? `${t.label}: existing draft reused (deduplicated, FR-5)`
+          : `${t.label}: draft generated`,
+      );
+      setSelectedId(item.id);
+    },
+    onError: (err: unknown, t) => {
+      toast.error(err instanceof Error ? err.message : `Failed to draft "${t.label}"`);
+    },
+  });
+
+  return (
+    <div className="mt-6 space-y-5">
+      <Panel
+        title="Live drafts — wired to Backend-AI-OS"
+        subtitle="/api/es/agent-communication — real Workflow_12 fixture triggers (the threads above stay mocked, including hand-offs from Quote Comparison/Binder & Issuance/Endorsement Processing)"
+      >
+        <div className="flex flex-wrap gap-2">
+          {FIXTURE_TRIGGERS.map((t) => (
+            <Button
+              key={t.ref}
+              variant="secondary"
+              disabled={runMutation.isPending}
+              onClick={() => runMutation.mutate(t)}
+            >
+              {runMutation.isPending && runMutation.variables?.ref === t.ref ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {t.label}
+            </Button>
+          ))}
+        </div>
+      </Panel>
+
+      {listQuery.isLoading && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading drafted communications…
+        </div>
+      )}
+      {listQuery.isError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load drafts."}
+        </div>
+      )}
+
+      {!listQuery.isLoading && !listQuery.isError && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel title="Drafted communications" subtitle={`${items.length} generated`}>
+            {items.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No drafts yet — run a trigger above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
+                      selectedId === row.id ? "bg-secondary/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate font-mono text-sm">
+                        {row.submission_id ?? row.id}
+                      </span>
+                      <div className="mt-1.5">
+                        <Chip>{row.status}</Chip>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <div className="space-y-5">
+            {!selectedId ? (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Select a draft from the list.
+                </div>
+              </Panel>
+            ) : detailQuery.isLoading ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading draft…
+                </div>
+              </Panel>
+            ) : detailQuery.isError ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {detailQuery.error instanceof Error
+                    ? detailQuery.error.message
+                    : "Failed to load draft."}
+                </div>
+              </Panel>
+            ) : detailQuery.data?.payload ? (
+              <LiveDraftCard
+                itemId={detailQuery.data.id}
+                payload={detailQuery.data.payload}
+                onActed={appendLog}
+              />
+            ) : (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No draft data for this item.
+                </div>
+              </Panel>
+            )}
+
+            <Panel
+              title="Activity (live section)"
+              subtitle="This session's real actions"
+              actions={<FoundationBadge kind="matching" />}
+            >
+              <ul className="divide-y divide-border">
+                {log.length === 0 ? (
+                  <li className="py-6 text-center text-sm text-muted-foreground">
+                    No activity yet this session.
+                  </li>
+                ) : (
+                  log.slice(0, 10).map((d, i) => (
+                    <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                      <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                        {d.at}
+                      </span>
+                      <div className="flex-1">
+                        <div>
+                          <b>{d.who}</b> — {d.what}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                      </div>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </Panel>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
