@@ -380,6 +380,169 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/es/agent-communication/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Agent Communication
+         * @description Drafts one communication from a trigger object (PRD FR-1/FR-2: a Market
+         *     Matching / Package Assembly output object, or a manually-logged trigger) —
+         *     never sends anything (human-in-the-loop, FR-20).
+         */
+        post: operations["run_agent_communication_api_es_agent_communication_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/agent-communication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Agent Communication */
+        get: operations["list_agent_communication_api_es_agent_communication_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/agent-communication/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Agent Communication */
+        get: operations["get_agent_communication_api_es_agent_communication__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/agent-communication/{item_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_api_es_agent_communication__item_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/agent-communication/{item_id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send */
+        post: operations["send_api_es_agent_communication__item_id__send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/agent-communication/{item_id}/edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Edit
+         * @description Audit-only, no status change (FR-17 logs the edit for the feedback loop;
+         *     computing a real edit-distance needs the FE's submitted edited body, which
+         *     is a follow-on enhancement — same simplification package_assembly's own
+         *     ``/edit`` made).
+         */
+        post: operations["edit_api_es_agent_communication__item_id__edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/agent-communication/{item_id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard
+         * @description FR-15's third one-click action. ``ReviewStatus`` has no frozen
+         *     "discarded" value, so this sets the workflow-owned ``payload.status``
+         *     instead of routing through ``review_queue.act()`` — same pattern as
+         *     ``compliance-clear`` below.
+         */
+        post: operations["discard_api_es_agent_communication__item_id__discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/agent-communication/{item_id}/compliance-clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compliance Clear
+         * @description FR-8/FR-16: clears the compliance-review gate on a No Market Found
+         *     draft, once the design partner's compliance/legal function has actually
+         *     signed off (RA-TN-06 — this endpoint does not decide THAT question, it
+         *     only records that a human with authority marked it resolved). Senior/admin
+         *     only, mirroring review_queue's existing gating for consequential actions.
+         *     ``ReviewAction`` has no "compliance sign-off" value (frozen enum), so this
+         *     is a dedicated, router-owned endpoint rather than a ``review_queue.act()``
+         *     call — see module docstring.
+         */
+        post: operations["compliance_clear_api_es_agent_communication__item_id__compliance_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -498,6 +661,60 @@ export interface components {
             /** Content */
             content: string;
         };
+        /**
+         * DraftCommunicationOut
+         * @description The FE review-queue screen's data needs for one drafted communication.
+         */
+        DraftCommunicationOut: {
+            /** Draft Id */
+            draft_id: string;
+            /** Trigger Type */
+            trigger_type: string;
+            /** Source Workflow */
+            source_workflow: string;
+            /** Source Record Id */
+            source_record_id?: string | null;
+            /** Submission Id */
+            submission_id?: string | null;
+            /** Named Insured */
+            named_insured?: string | null;
+            /** Carrier Name */
+            carrier_name?: string | null;
+            /** Retail Agent Name */
+            retail_agent_name?: string | null;
+            /** Retail Agency */
+            retail_agency?: string | null;
+            /** Subject Line */
+            subject_line: string;
+            /** Body */
+            body: string;
+            /**
+             * Requires Compliance Review
+             * @default false
+             */
+            requires_compliance_review: boolean;
+            /**
+             * Carrier Names Disclosed
+             * @default false
+             */
+            carrier_names_disclosed: boolean;
+            /**
+             * Grounding Citations
+             * @default []
+             */
+            grounding_citations: components["schemas"]["GroundingCitationOut"][];
+            /**
+             * Status
+             * @default DRAFT
+             */
+            status: string;
+            /** Edit Distance From Original */
+            edit_distance_from_original?: number | null;
+            /** Generated Timestamp */
+            generated_timestamp: string;
+            /** Sent Timestamp */
+            sent_timestamp?: string | null;
+        };
         /** ExcludedCarrierOut */
         ExcludedCarrierOut: {
             /** Carrier Id */
@@ -533,6 +750,19 @@ export interface components {
              * @default true
              */
             cover_letter_acknowledgment: boolean;
+        };
+        /**
+         * GroundingCitationOut
+         * @description A lighter-weight grounding note than the frozen ``Citation`` DTO (which
+         *     requires a document kind/filename) — this workflow's facts come from an
+         *     upstream structured object, not a scanned document, so citations point at
+         *     the source FIELD instead.
+         */
+        GroundingCitationOut: {
+            /** Claim */
+            claim: string;
+            /** Source Field */
+            source_field: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -762,6 +992,28 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ReviewItemOut */
+        verticals__es__workflows__agent_communication__router__ReviewItemOut: {
+            /** Id */
+            id: string;
+            /** Submission Id */
+            submission_id: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Deduplicated
+             * @default false
+             */
+            deduplicated: boolean;
+            payload?: components["schemas"]["DraftCommunicationOut"] | null;
+        };
+        /** RunRequest */
+        verticals__es__workflows__agent_communication__router__RunRequest: {
+            /** Trigger */
+            trigger: {
+                [key: string]: unknown;
+            };
         };
         /** ReviewItemOut */
         verticals__es__workflows__market_matching__router__ReviewItemOut: {
@@ -1503,6 +1755,294 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["verticals__es__workflows__package_assembly__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_agent_communication_api_es_agent_communication_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["verticals__es__workflows__agent_communication__router__RunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agent_communication_api_es_agent_communication_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_agent_communication_api_es_agent_communication__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_es_agent_communication__item_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_api_es_agent_communication__item_id__send_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_api_es_agent_communication__item_id__edit_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_api_es_agent_communication__item_id__discard_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compliance_clear_api_es_agent_communication__item_id__compliance_clear_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
