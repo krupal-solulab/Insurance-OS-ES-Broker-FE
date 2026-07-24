@@ -6,7 +6,11 @@
 import { api } from "./client";
 import type { components } from "./schema";
 
-export type ReviewItemOut = components["schemas"]["ReviewItemOut"];
+// FastAPI qualifies this with the module path once a second workflow router also
+// defines a `ReviewItemOut`/`RunRequest` class (see packageAssembly.ts) — plain
+// "ReviewItemOut" no longer exists in the generated schema.
+export type ReviewItemOut =
+  components["schemas"]["verticals__es__workflows__market_matching__router__ReviewItemOut"];
 export type MarketMatchingPayload = components["schemas"]["MarketMatchingPayload"];
 export type CarrierMatchOut = components["schemas"]["CarrierMatchOut"];
 export type ExcludedCarrierOut = components["schemas"]["ExcludedCarrierOut"];

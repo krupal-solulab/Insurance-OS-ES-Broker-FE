@@ -16,6 +16,15 @@ import {
   type ReviewActionVerb,
 } from "@/lib/api/marketMatching";
 import {
+  FIXTURE_SCENARIO_REFS,
+  actOnPackageAssembly,
+  getPackageAssembly,
+  listPackageAssembly,
+  runPackageAssembly,
+  type PackageActionVerb,
+  type PackageAssemblyPayload,
+} from "@/lib/api/packageAssembly";
+import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
@@ -59,15 +68,10 @@ import {
   monthlyPipeline,
   remarketing,
   stateMix,
-  submissionDocs,
-  submissionMarkets,
-  submissions,
   quotes,
   binders,
   diligentSearch,
   appetiteSignals,
-  type Market,
-  type Submission,
   type Binder,
   type Discrepancy,
   type MidTermChange,
@@ -356,8 +360,6 @@ function Consistency({
 /* ============================================================
    1. Submission Market Matching
    ============================================================ */
-
-const RECOMMENDED_CARRIERS = ["Kinsale Insurance", "James River Insurance", "Ategrity Specialty"];
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending review",
@@ -1044,108 +1046,24 @@ function ActivityTab({ log }: { log: LogEntry[] }) {
    2. Submission Package Assembly
    ============================================================ */
 
-type PackageStatus = "READY" | "READY_WITH_GAP" | "BLOCKED";
-
 type LogEntry = { at: string; who: string; what: string; ctx: string; conf: string };
 
-// Shared fields with a direct extracted source — PA-02 auto-fills these and cites
-// the source document. Illustrative example data (Palmetto Cold Storage LLC).
-const BASE_SUPPLEMENTAL_FIELDS: { label: string; value: string; doc: string; page: number }[] = [
-  {
-    label: "Named insured",
-    value: "Palmetto Cold Storage LLC",
-    doc: "ACORD_125_Palmetto.pdf",
-    page: 1,
-  },
-  { label: "FEIN", value: "58-1298347", doc: "ACORD_125_Palmetto.pdf", page: 1 },
-  {
-    label: "Mailing address",
-    value: "4210 Warehouse Rd, Jacksonville FL 32218",
-    doc: "ACORD_125_Palmetto.pdf",
-    page: 1,
-  },
-  {
-    label: "Requested effective date",
-    value: "02/12/2026",
-    doc: "ACORD_125_Palmetto.pdf",
-    page: 2,
-  },
-  {
-    label: "TIV / locations",
-    value: "$42.8M across 14 locations",
-    doc: "Palmetto_SOV_2026.xlsx",
-    page: 1,
-  },
-  { label: "Sprinklered %", value: "92%", doc: "Palmetto_SOV_2026.xlsx", page: 1 },
-  {
-    label: "Prior carrier / premium",
-    value: "Kinsale Insurance · $168,900",
-    doc: "ACORD_140_Palmetto.pdf",
-    page: 2,
-  },
-  { label: "5yr loss ratio", value: "38%", doc: "Loss_Run_5yr.pdf", page: 4 },
-];
-
-// Carrier-specific fields with no extracted source — PA-02 leaves these for manual entry.
-const CARRIER_MANUAL_FIELDS: Record<string, { label: string; placeholder: string }[]> = {
-  "Kinsale Insurance": [
-    {
-      label: "Refrigeration monitoring vendor & install date",
-      placeholder: "e.g. ColdChain Sensors, installed 01/2025",
-    },
-  ],
-  "James River Insurance": [
-    {
-      label: "Sprinkler inspection date & inspector",
-      placeholder: "Pending — inspection not yet scheduled",
-    },
-  ],
-  "Ategrity Specialty": [
-    { label: "Loss-run addendum reference #", placeholder: "e.g. LR-ADD-2026-0142" },
-    { label: "Refrigeration monitoring cert #", placeholder: "e.g. RMC-88214" },
-  ],
-  Markel: [{ label: "Countersignature date", placeholder: "Pending broker countersignature" }],
+const PACKAGE_ACTION_LABEL: Record<PackageActionVerb, string> = {
+  approve: "Approve",
+  edit: "Log edit",
+  send: "Mark as sent",
 };
 
-// PA-05: one deliberate format mismatch (Ategrity) so the warn state is real, not theoretical.
-const FORMAT_ISSUES: Record<string, string | null> = {
-  "Kinsale Insurance": null,
-  "James River Insurance": null,
-  "Ategrity Specialty":
-    "Loss run currently on file as a raw PDF export — Ategrity requires their carrier-formatted loss run before they'll accept the package.",
-  Markel: null,
-};
-
-function buildCoverLetter(market: Market, submission: Submission): string {
-  const outstanding = market.missingInfo;
-  const statusLine =
-    outstanding.length > 0
-      ? `Still finalizing ${outstanding.join(" and ")} — will follow up the moment ${outstanding.length > 1 ? "they're" : "it's"} in hand.`
-      : "Full package attached, nothing outstanding on our end.";
-  return `Hi team — submitting ${submission.insured} (${submission.state}) for your review. ${submission.tiv} TIV, ${submission.industry.toLowerCase()}. ${market.appetiteNotes} ${statusLine} Requested effective date ${submission.effective} — happy to jump on a call this week.`;
-}
-
-function buildInitialLog(carrierNames: string[], submission: Submission): LogEntry[] {
-  const now = new Date();
-  return carrierNames.map((carrier, i) => ({
-    at: new Date(now.getTime() - i * 60_000).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
-    who: "AI (Matching/Ranking Core)",
-    what: "Package generated — PA-01 through PA-06 run",
-    ctx: `${carrier} · ${submission.id}`,
-    conf: "—",
-  }));
-}
-
-function PackageStatusBadge({ status }: { status: PackageStatus }) {
-  const map = {
-    READY: { label: "Ready to send", tone: "success" as const, Icon: CheckCircle2 },
-    READY_WITH_GAP: { label: "Ready with gap", tone: "warn" as const, Icon: AlertTriangle },
-    BLOCKED: { label: "Blocked", tone: "danger" as const, Icon: XCircle },
+function PackageStatusBadge({ status }: { status: string }) {
+  const map: Record<
+    string,
+    { label: string; tone: "success" | "warn" | "danger"; Icon: typeof CheckCircle2 }
+  > = {
+    READY: { label: "Ready to send", tone: "success", Icon: CheckCircle2 },
+    READY_WITH_GAP: { label: "Ready with gap", tone: "warn", Icon: AlertTriangle },
+    BLOCKED: { label: "Blocked", tone: "danger", Icon: XCircle },
   };
-  const { label, tone, Icon } = map[status];
+  const { label, tone, Icon } = map[status] ?? { label: status, tone: "warn" as const, Icon: Info };
   return (
     <Chip tone={tone}>
       <Icon className="h-3 w-3" />
@@ -1176,360 +1094,254 @@ function SourceCitation({
 }
 
 function CarrierPackageCard({
-  market,
-  submission,
-  onLog,
+  itemId,
+  payload,
+  onActed,
 }: {
-  market: Market;
-  submission: Submission;
-  onLog: (who: string, what: string, ctx: string) => void;
+  itemId: string;
+  payload: PackageAssemblyPayload;
+  onActed: (who: string, what: string, ctx: string) => void;
 }) {
-  const [receivedDocs, setReceivedDocs] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
   const [manualValues, setManualValues] = useState<Record<string, string>>({});
-  const [coverLetter, setCoverLetter] = useState(() => buildCoverLetter(market, submission));
-  const [regenerating, setRegenerating] = useState(false);
-  const [regenError, setRegenError] = useState("");
-  const [sentAt, setSentAt] = useState<string | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
-  const [lastLoggedLetter, setLastLoggedLetter] = useState(() =>
-    buildCoverLetter(market, submission),
-  );
-  const [outcome, setOutcome] = useState<"Quoted" | "Bound" | "Declined" | null>(null);
+  const [pendingAction, setPendingAction] = useState<PackageActionVerb | null>(null);
 
-  const outstandingDocs = market.missingInfo.filter((d) => !receivedDocs.has(d));
-  const manualFields = CARRIER_MANUAL_FIELDS[market.carrier] ?? [];
-  const unfilledFields = manualFields.filter((f) => !manualValues[f.label]?.trim());
-  const dsRecord = diligentSearch.find((d) => d.insured === submission.insured);
-  const dsState = dsRecord?.states.find((s) => s.state === submission.state);
-  const dsSatisfied = dsState ? dsState.evidenceSufficient || dsState.status === "Exempt" : false;
-  const formatIssue = FORMAT_ISSUES[market.carrier] ?? null;
+  const actionMutation = useMutation({
+    mutationFn: (action: "approve" | "send") => actOnPackageAssembly(itemId, action),
+    onMutate: (action: "approve" | "send") => setPendingAction(action),
+    onSuccess: (item, action) => {
+      onActed(
+        "You",
+        `${PACKAGE_ACTION_LABEL[action]} — POST /api/es/package-assembly/${itemId}/${action}`,
+        `${payload.carrier_name} package → status "${item.status}"`,
+      );
+      toast.success(`${PACKAGE_ACTION_LABEL[action]} succeeded`);
+      queryClient.invalidateQueries({ queryKey: ["package-assembly"] });
+    },
+    onError: (err: unknown, action) => {
+      toast.error(err instanceof Error ? err.message : `${PACKAGE_ACTION_LABEL[action]} failed`);
+    },
+    onSettled: () => setPendingAction(null),
+  });
 
-  const status: PackageStatus =
-    outstandingDocs.length > 0 || (market.diligentSearchRequired && !dsSatisfied)
-      ? "BLOCKED"
-      : unfilledFields.length > 0 || formatIssue
-        ? "READY_WITH_GAP"
-        : "READY";
+  const editLogMutation = useMutation({
+    mutationFn: () => actOnPackageAssembly(itemId, "edit"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["package-assembly"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to log edit");
+    },
+  });
 
-  function markReceived(doc: string) {
-    setReceivedDocs((prev) => new Set(prev).add(doc));
-    onLog("Sam D. (Broker)", `Marked "${doc}" as received`, `${market.carrier} package`);
-  }
-
-  function handleLetterBlur() {
-    if (coverLetter !== lastLoggedLetter) {
-      onLog("Sam D. (Broker)", "Edited cover letter", `${market.carrier} package`);
-      setLastLoggedLetter(coverLetter);
-      setConfirmed(false);
-    }
-  }
-
-  function confirmContents() {
-    setConfirmed(true);
-    onLog("Sam D. (Broker)", "Confirmed package contents", `${market.carrier} package`);
-  }
-
-  function recordOutcome(next: "Quoted" | "Bound" | "Declined") {
-    setOutcome(next);
-    onLog("Sam D. (Broker)", `Recorded eventual outcome — ${next}`, `${market.carrier} package`);
-  }
-
-  async function regenerate() {
-    setRegenerating(true);
-    setRegenError("");
-    try {
-      // TODO: replace with a real drafting call once Package Assembly has a backend —
-      // this only re-runs the same local template, it doesn't call an LLM.
-      const next = await simulateRequest(buildCoverLetter(market, submission));
-      setCoverLetter(next);
-      setLastLoggedLetter(next);
-      setConfirmed(false);
-      onLog("AI (Matching/Ranking Core)", "Cover letter regenerated", `${market.carrier} package`);
-    } catch (err) {
-      setRegenError(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      setRegenerating(false);
-    }
+  function handleManualFieldBlur(fieldName: string) {
+    const value = manualValues[fieldName];
+    if (!value?.trim()) return;
+    onActed("You", `Filled "${fieldName.replace(/_/g, " ")}"`, `${payload.carrier_name} package`);
+    editLogMutation.mutate();
   }
 
   function copyCoverLetter() {
     navigator.clipboard
-      .writeText(coverLetter)
+      .writeText(payload.cover_letter.body)
       .then(() => toast.success("Cover letter copied"))
       .catch(() => toast.error("Couldn't copy — select the text and copy manually."));
   }
 
-  function markSent() {
-    const stamp = new Date().toLocaleString([], {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    setSentAt(stamp);
-    onLog("Sam D. (Broker)", "Marked package as sent", `${market.carrier} package`);
-  }
+  const blocked = payload.status === "BLOCKED";
 
   return (
     <Panel>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="font-serif text-xl">{market.carrier}</h3>
-            <PackageStatusBadge status={status} />
+            <h3 className="font-serif text-xl">{payload.carrier_name}</h3>
+            <PackageStatusBadge status={payload.status} />
           </div>
-          <p className="mt-1 max-w-xl text-[12px] text-muted-foreground">{market.appetiteNotes}</p>
-          <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
-            <span>Capacity: {market.capacity}</span>
-            <span>Turnaround: {market.turnaround}</span>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {payload.submission_id ?? "unknown submission"} · package{" "}
+            {payload.package_id.slice(0, 8)}…
           </div>
         </div>
         <FoundationBadge kind="matching" />
       </div>
 
+      {blocked && payload.blocking_items.length > 0 && (
+        <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <div className="text-xs font-medium text-destructive">
+            {payload.blocking_items.length} item{payload.blocking_items.length === 1 ? "" : "s"}{" "}
+            block this package
+          </div>
+          <ul className="mt-2 space-y-1 text-[12px] text-foreground">
+            {payload.blocking_items.map((b) => (
+              <li key={b.item} className="flex items-start gap-2">
+                <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+                <span>
+                  <b>{b.item}</b> — {b.reason}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {payload.status === "READY_WITH_GAP" && payload.gap_items_disclosed.length > 0 && (
+        <div className="mt-4 rounded-lg border border-warn/30 bg-warn/5 p-3">
+          <div className="text-xs font-medium text-foreground">
+            Disclosed gap{payload.gap_items_disclosed.length === 1 ? "" : "s"} — proactively noted
+            in the cover letter, not hidden
+          </div>
+          <ul className="mt-2 space-y-1 text-[12px] text-foreground">
+            {payload.gap_items_disclosed.map((g) => (
+              <li key={g.item} className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warn" />
+                {g.item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        {/* PA-01 / PA-03 */}
+        {/* PA-01 */}
         <div>
-          <div className="mb-2 text-xs font-medium">Document completeness · PA-01</div>
+          <div className="mb-2 text-xs font-medium">Document completeness</div>
           <ul className="divide-y divide-border rounded-lg border border-border text-sm">
-            {market.requirements.map((doc) => {
-              const missing = outstandingDocs.includes(doc);
-              return (
-                <li key={doc} className="flex items-center gap-3 p-3">
-                  {missing ? (
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-warn" />
-                  ) : (
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-                  )}
-                  <span className="flex-1">{doc}</span>
-                  {missing ? (
-                    <Button
-                      variant="secondary"
-                      className="!py-1 !text-xs"
-                      onClick={() => markReceived(doc)}
-                    >
-                      Mark as received
-                    </Button>
-                  ) : (
-                    <Chip tone="success">On file</Chip>
-                  )}
-                </li>
-              );
-            })}
+            {payload.document_checklist.map((d) => (
+              <li key={d.document_type} className="flex items-center gap-3 p-3">
+                {d.included ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-warn" />
+                )}
+                <span className="flex-1">{d.document_type}</span>
+                <Chip tone={d.included ? "success" : "warn"}>
+                  {d.included ? "On file" : "Missing"}
+                </Chip>
+              </li>
+            ))}
           </ul>
 
-          <div className="mt-4 mb-2 flex items-center gap-2 text-xs font-medium">
-            Format &amp; version compliance · PA-05
-          </div>
-          {formatIssue ? (
-            <div className="flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/5 p-3 text-[12px] text-foreground">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-              {formatIssue}
-            </div>
-          ) : (
-            <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-[12px] text-foreground">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-              Matches stated preference: {market.formatPreference}
-            </div>
-          )}
-
-          <div className="mt-4 mb-2 text-xs font-medium">Diligent search · PA-06</div>
-          {!market.diligentSearchRequired ? (
-            <div className="rounded-lg border border-border p-3 text-[12px] text-muted-foreground">
-              Not required for this carrier's paper.
-            </div>
-          ) : dsSatisfied ? (
-            <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-[12px] text-foreground">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-              Attached — {dsState?.declinationsOnFile}/{dsState?.requiredDeclinations} declinations
-              on file, evidence sufficient.
-            </div>
-          ) : (
-            <div className="flex items-start justify-between gap-2 rounded-lg border border-warn/30 bg-warn/5 p-3 text-[12px] text-foreground">
-              <span className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-                Not attached — {dsState?.declinationsOnFile ?? 0}/
-                {dsState?.requiredDeclinations ?? "?"} declinations on file.
+          <div className="mt-4 mb-2 text-xs font-medium">Diligent search</div>
+          <div
+            className={`rounded-lg border p-3 text-[12px] ${payload.diligent_search_attached ? "border-success/30 bg-success/5 text-foreground" : "border-border text-muted-foreground"}`}
+          >
+            {payload.diligent_search_attached ? (
+              <span className="inline-flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+                Attached to this package
               </span>
-              <Link
-                to="/app/workflows/$slug"
-                params={{ slug: "diligent-search" }}
-                className="shrink-0 whitespace-nowrap text-accent underline-offset-2 hover:underline"
-              >
-                Complete in Diligent Search →
-              </Link>
-            </div>
-          )}
+            ) : (
+              "Not attached"
+            )}
+          </div>
         </div>
 
         {/* PA-02 */}
         <div>
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-xs font-medium">Supplemental form · PA-02</div>
-            <span className="rounded-full border border-border px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
-              Illustrative
-            </span>
-          </div>
+          <div className="mb-2 text-xs font-medium">Supplemental form</div>
           <div className="grid gap-3 rounded-lg border border-border p-4 text-sm sm:grid-cols-2">
-            {BASE_SUPPLEMENTAL_FIELDS.map((f) => (
-              <div key={f.label}>
+            {payload.supplemental_form_fields.map((f) => (
+              <div key={f.field_name}>
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {f.label}
+                  {f.field_name.replace(/_/g, " ")}
+                  {!f.auto_filled && <span className="text-warn"> · manual</span>}
                 </div>
-                <SourceCitation doc={f.doc} page={f.page}>
-                  {f.value}
-                </SourceCitation>
-              </div>
-            ))}
-            {manualFields.map((f) => (
-              <div key={f.label}>
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {f.label} <span className="text-warn">· manual</span>
-                </div>
-                <input
-                  value={manualValues[f.label] ?? ""}
-                  onChange={(e) =>
-                    setManualValues((prev) => ({ ...prev, [f.label]: e.target.value }))
-                  }
-                  onBlur={() =>
-                    manualValues[f.label]?.trim() &&
-                    onLog("Sam D. (Broker)", `Filled "${f.label}"`, `${market.carrier} package`)
-                  }
-                  placeholder={f.placeholder}
-                  className="w-full rounded border border-dashed border-warn/40 bg-background px-1.5 py-0.5 text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                />
+                {f.auto_filled ? (
+                  <div
+                    className="rounded bg-accent/15 px-1.5 py-0.5 text-foreground"
+                    title={f.source_citation ? `Source: ${f.source_citation}` : undefined}
+                  >
+                    {f.value}
+                  </div>
+                ) : (
+                  <input
+                    value={manualValues[f.field_name] ?? ""}
+                    onChange={(e) =>
+                      setManualValues((prev) => ({ ...prev, [f.field_name]: e.target.value }))
+                    }
+                    onBlur={() => handleManualFieldBlur(f.field_name)}
+                    placeholder="No extracted source — enter manually"
+                    className="w-full rounded border border-dashed border-warn/40 bg-background px-1.5 py-0.5 text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                )}
               </div>
             ))}
           </div>
           <div className="mt-1 text-[10px] text-muted-foreground">
-            Highlighted fields are auto-filled and cited to source — click one to jump to it. Dashed
-            fields have no extracted source and need your input.
+            Highlighted fields are auto-filled and grounded to a real document (hover for source).
+            Dashed fields have no extracted source — PA-02's grounding boundary — and stay empty
+            until filled; typing logs a generic "edited" event (the API doesn't yet capture which
+            field changed).
           </div>
         </div>
       </div>
 
       {/* PA-04 */}
       <div className="mt-5">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-xs font-medium">Cover letter draft · PA-04</div>
-          <span className="rounded-full border border-border px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
-            Illustrative
-          </span>
+        <div className="mb-2 text-xs font-medium">Cover letter draft</div>
+        <div className="whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-sm">
+          {payload.cover_letter.body}
         </div>
-        <textarea
-          rows={4}
-          value={coverLetter}
-          onChange={(e) => setCoverLetter(e.target.value)}
-          onBlur={handleLetterBlur}
-          className="w-full resize-none rounded-lg border border-border bg-background p-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        />
-        {regenError && (
-          <div
-            role="alert"
-            className="mt-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive"
-          >
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            {regenError}
+        {payload.cover_letter.citations.length > 0 && (
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            Citations: {payload.cover_letter.citations.map((c) => c.source).join(", ")}
           </div>
         )}
-        <div className="mt-2 flex justify-end gap-2">
-          <Button variant="ghost" onClick={regenerate} disabled={regenerating}>
-            {regenerating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4" />
-            )}
-            {regenerating ? "Regenerating…" : "Regenerate"}
-          </Button>
-        </div>
-      </div>
-
-      {/* Broker review: confirm contents (step 5) is distinct from send (step 6) */}
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background p-3">
-        <div className="text-[11px] text-muted-foreground">
-          {confirmed ? (
-            <span className="inline-flex items-center gap-1.5 text-success">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Package contents confirmed — ready to compile and send.
-            </span>
-          ) : (
-            "Review the completeness checklist, fields, and cover letter above, then confirm before sending."
-          )}
-        </div>
-        <Button
-          variant={confirmed ? "secondary" : "primary"}
-          disabled={status === "BLOCKED" || confirmed}
-          title={status === "BLOCKED" ? "Resolve the blocked items above first" : undefined}
-          onClick={confirmContents}
-        >
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          {confirmed ? "Contents confirmed" : "Confirm package contents"}
-        </Button>
-      </div>
-
-      {/* Send boundary — non-negotiable: assemble/draft only, broker sends manually */}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-secondary/30 p-3">
-        <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
-          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Coverline drafts and assembles — you send it, by email or {market.carrier}'s portal.
-          Nothing here transmits automatically.
-        </div>
-        <div className="flex items-center gap-2">
+        <div className="mt-2 flex justify-end">
           <Button variant="secondary" onClick={copyCoverLetter}>
             <Copy className="h-3.5 w-3.5" />
             Copy cover letter
           </Button>
-          {sentAt ? (
-            <Chip tone="success">
-              <CheckCircle2 className="h-3 w-3" />
-              Sent {sentAt}
-            </Chip>
-          ) : (
-            <Button
-              variant={confirmed ? "primary" : "secondary"}
-              disabled={!confirmed}
-              title={
-                !confirmed
-                  ? "Confirm package contents first"
-                  : "You confirm this was sent — nothing sends automatically"
-              }
-              onClick={markSent}
-            >
-              <Clock className="h-3.5 w-3.5" />
-              Mark as sent
-            </Button>
-          )}
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-[11px]">
-        <span className="text-muted-foreground">Record eventual outcome:</span>
-        <Button
-          variant="ghost"
-          className="!py-1 !text-xs"
-          disabled={!sentAt}
-          onClick={() => recordOutcome("Quoted")}
-        >
-          Quoted
-        </Button>
-        <Button
-          variant="ghost"
-          className="!py-1 !text-xs"
-          disabled={!sentAt}
-          onClick={() => recordOutcome("Bound")}
-        >
-          Bound
-        </Button>
-        <Button
-          variant="ghost"
-          className="!py-1 !text-xs"
-          disabled={!sentAt}
-          onClick={() => recordOutcome("Declined")}
-        >
-          Declined
-        </Button>
-        {!sentAt && <span className="text-muted-foreground">(available once marked as sent)</span>}
-        {outcome && <Chip tone={outcome === "Declined" ? "danger" : "success"}>{outcome}</Chip>}
+      {/* Send boundary — non-negotiable: assemble/draft only, broker sends manually */}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-secondary/30 p-3">
+        <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Coverline drafts and assembles — you send it. Nothing here transmits automatically.
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            disabled={blocked || actionMutation.isPending}
+            title={blocked ? "Resolve the blocking items above first" : undefined}
+            onClick={() => actionMutation.mutate("approve")}
+          >
+            {pendingAction === "approve" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Approve
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={blocked || actionMutation.isPending}
+            title={blocked ? "Resolve the blocking items above first" : undefined}
+            onClick={() => actionMutation.mutate("send")}
+          >
+            {pendingAction === "send" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            <Clock className="h-3.5 w-3.5" />
+            Mark as sent
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          Status log
+        </div>
+        <ul className="space-y-1 text-[11px] text-muted-foreground">
+          {payload.status_log.map((s, i) => (
+            <li key={i}>
+              {new Date(s.timestamp).toLocaleString()} — {s.action} ({s.user})
+            </li>
+          ))}
+        </ul>
+        <div className="mt-1 text-[10px] text-muted-foreground">
+          From the package's real backend record (generated at assembly time). Approve/edit/send are
+          written to this tenant's audit log too, but the API doesn't yet append them to this list —
+          the status badge above and the Activity panel below reflect them in the meantime.
+        </div>
       </div>
     </Panel>
   );
@@ -1537,27 +1349,29 @@ function CarrierPackageCard({
 
 export function PackageAssembly({ search = {} }: { search?: Record<string, unknown> }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const goToMatching = () =>
     navigate({ to: "/app/workflows/$slug", params: { slug: "submission-matching" } });
-  const submissionId = typeof search.submissionId === "string" ? search.submissionId : undefined;
-  const submission = submissions.find((s) => s.id === submissionId) ?? submissions[0];
 
-  const rawCarriers = typeof search.carriers === "string" ? search.carriers : undefined;
-  const carrierNames =
-    rawCarriers === undefined ? RECOMMENDED_CARRIERS : rawCarriers.split(",").filter(Boolean);
-  const markets = carrierNames
-    .map((name) => submissionMarkets.find((m) => m.carrier === name))
-    .filter((m): m is Market => Boolean(m));
+  const upstreamSubmissionId =
+    typeof search.submissionId === "string" ? search.submissionId : undefined;
+  const upstreamCarriers =
+    typeof search.carriers === "string" ? search.carriers.split(",").filter(Boolean) : [];
 
-  const [loading, setLoading] = useState(true);
-  const [log, setLog] = useState<LogEntry[]>(() => buildInitialLog(carrierNames, submission));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [log, setLog] = useState<LogEntry[]>([]);
 
-  // Simulated "running PA-01…PA-06" pass — mirrors the ProcessAnim convention used
-  // elsewhere in the app, and gives this page a real (if brief) loading state.
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 550);
-    return () => clearTimeout(t);
-  }, [submissionId, rawCarriers]);
+  const listQuery = useQuery({
+    queryKey: ["package-assembly", "list"],
+    queryFn: listPackageAssembly,
+  });
+  const items = listQuery.data ?? [];
+
+  const detailQuery = useQuery({
+    queryKey: ["package-assembly", "detail", selectedId],
+    queryFn: () => getPackageAssembly(selectedId!),
+    enabled: Boolean(selectedId),
+  });
 
   function appendLog(who: string, what: string, ctx: string) {
     setLog((prev) => [
@@ -1572,12 +1386,26 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
     ]);
   }
 
+  const runMutation = useMutation({
+    mutationFn: (scenarioRef: string) => runPackageAssembly(scenarioRef),
+    onSuccess: (createdItems, scenarioRef) => {
+      queryClient.invalidateQueries({ queryKey: ["package-assembly"] });
+      toast.success(
+        `${scenarioRef}: assembled ${createdItems.length} package${createdItems.length === 1 ? "" : "s"}`,
+      );
+      if (createdItems[0]) setSelectedId(createdItems[0].id);
+    },
+    onError: (err: unknown, scenarioRef) => {
+      toast.error(err instanceof Error ? err.message : `Failed to run ${scenarioRef}`);
+    },
+  });
+
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Workflow 02"
+        eyebrow="Workflow 02 · Live"
         title="Submission Package Assembly"
-        description="Turn a carrier selection from Market Matching into carrier-specific packages — completeness check, bounded auto-fill, and a drafted cover letter, reviewed and sent independently per carrier."
+        description="Wired to Backend-AI-OS's /api/es/package-assembly — real per-carrier packages from the Workflow_11 fixture scenarios."
         actions={
           <Button variant="secondary" onClick={goToMatching}>
             ← Back to Market Matching
@@ -1585,107 +1413,150 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
         }
       />
 
-      <div className="mb-5">
-        <ProcessAnim
-          steps={[
-            {
-              label: `Carrier selection received from Market Matching · ${markets.length} carrier${markets.length === 1 ? "" : "s"}`,
-              kind: "matching",
-            },
-            {
-              label: "Document completeness checked independently per carrier (PA-01)",
-              kind: "extraction",
-            },
-            {
-              label:
-                "Supplemental forms auto-filled — extracted fields only, nothing invented (PA-02)",
-              kind: "extraction",
-            },
-            {
-              label:
-                "Cover letter drafted per carrier, tailored to appetite + risk profile (PA-04)",
-              kind: "matching",
-            },
-          ]}
-        />
-      </div>
-
-      {markets.length === 0 ? (
-        <Panel>
-          <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <div className="grid h-12 w-12 place-items-center rounded-full bg-secondary">
-              <Package className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <div className="font-serif text-lg">No carriers selected</div>
-            <p className="max-w-md text-sm text-muted-foreground">
-              Package Assembly needs at least one carrier from Market Matching. Go back and select
-              the carriers you want to package for.
-            </p>
-            <Button variant="primary" onClick={goToMatching}>
-              Go to Market Matching <ArrowRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </Panel>
-      ) : loading ? (
-        <div className="space-y-4">
-          {markets.map((m) => (
-            <Panel key={m.carrier}>
-              <div className="flex items-center gap-2">
-                <h3 className="font-serif text-xl">{m.carrier}</h3>
-                <Chip>Received</Chip>
-              </div>
-              <p className="mt-1 max-w-xl text-[12px] text-muted-foreground">{m.appetiteNotes}</p>
-              <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
-                <span>{m.requirements.length} requirements on record</span>
-                <span>
-                  Diligent search:{" "}
-                  {m.diligentSearchRequired ? "required for this paper" : "not required"}
-                </span>
-              </div>
-              <div className="mt-4 flex items-center gap-3 border-t border-border pt-3 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Running PA-01 through PA-06 for {m.carrier}…
-              </div>
-            </Panel>
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {markets.map((m) => (
-            <CarrierPackageCard
-              key={m.carrier}
-              market={m}
-              submission={submission}
-              onLog={appendLog}
-            />
-          ))}
+      {(upstreamSubmissionId || upstreamCarriers.length > 0) && (
+        <div className="mb-4 rounded-lg border border-dashed border-border bg-secondary/30 p-3 text-[11px] text-muted-foreground">
+          Arrived from Market Matching —{" "}
+          {upstreamCarriers.length > 0
+            ? `${upstreamCarriers.length} carrier(s) selected for ${upstreamSubmissionId ?? "a submission"}`
+            : upstreamSubmissionId}
+          . Package Assembly currently runs its own Workflow_11 fixture scenarios below
+          (scenario_01..06) — they're independent of that live selection until a real Market
+          Matching → Package Assembly hand-off exists on the backend.
         </div>
       )}
 
-      <div className="mt-6">
-        <Panel
-          title="Activity"
-          subtitle="Package status at generation, broker edits, and outcomes — logged per carrier"
-          actions={<FoundationBadge kind="matching" />}
-        >
-          <ul className="divide-y divide-border">
-            {log.slice(0, 8).map((d, i) => (
-              <li key={i} className="flex items-start gap-3 py-3 text-sm">
-                <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
-                <div className="flex-1">
-                  <div>
-                    <b>{d.who}</b> — {d.what}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+      <Panel
+        title="Scenario fixtures"
+        subtitle="Workflow_11 — each already has a carrier selection baked in"
+      >
+        <div className="flex flex-wrap gap-2">
+          {FIXTURE_SCENARIO_REFS.map((ref) => (
+            <Button
+              key={ref}
+              variant="secondary"
+              disabled={runMutation.isPending}
+              onClick={() => runMutation.mutate(ref)}
+            >
+              {runMutation.isPending && runMutation.variables === ref ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              Run {ref}
+            </Button>
+          ))}
+        </div>
+      </Panel>
+
+      {listQuery.isLoading && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading packages…
+        </div>
+      )}
+      {listQuery.isError && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load packages."}
+        </div>
+      )}
+
+      {!listQuery.isLoading && !listQuery.isError && (
+        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel title="Packages" subtitle={`${items.length} generated`}>
+            {items.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No packages yet — run a scenario above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
+                      selectedId === row.id ? "bg-secondary/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate font-mono text-sm">
+                        {row.submission_id ?? row.id}
+                      </span>
+                      <div className="mt-1.5">
+                        <Chip>{row.status}</Chip>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <div className="space-y-5">
+            {!selectedId ? (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Select a package from the list.
                 </div>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-3 text-[10px] text-muted-foreground">
-            Session-only for this prototype — not yet persisted to the shared Feedback/Eval store.
+              </Panel>
+            ) : detailQuery.isLoading ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading package…
+                </div>
+              </Panel>
+            ) : detailQuery.isError ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {detailQuery.error instanceof Error
+                    ? detailQuery.error.message
+                    : "Failed to load package."}
+                </div>
+              </Panel>
+            ) : detailQuery.data?.payload ? (
+              <CarrierPackageCard
+                itemId={detailQuery.data.id}
+                payload={detailQuery.data.payload}
+                onActed={appendLog}
+              />
+            ) : (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No package data for this item.
+                </div>
+              </Panel>
+            )}
+
+            <Panel
+              title="Activity"
+              subtitle="This session's actions"
+              actions={<FoundationBadge kind="matching" />}
+            >
+              <ul className="divide-y divide-border">
+                {log.length === 0 ? (
+                  <li className="py-6 text-center text-sm text-muted-foreground">
+                    No activity yet this session.
+                  </li>
+                ) : (
+                  log.slice(0, 10).map((d, i) => (
+                    <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                      <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                        {d.at}
+                      </span>
+                      <div className="flex-1">
+                        <div>
+                          <b>{d.who}</b> — {d.what}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                      </div>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </Panel>
           </div>
-        </Panel>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
