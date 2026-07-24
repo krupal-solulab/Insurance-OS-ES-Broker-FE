@@ -6,6 +6,7 @@ import {
   FIXTURE_SUBMISSION_REFS,
   actOnMarketMatching,
   getMarketMatching,
+  listDocuments,
   listMarketMatching,
   runMarketMatching,
   type CarrierMatchOut,
@@ -654,7 +655,7 @@ export function SubmissionMarketMatching() {
                   )}
                   {!detailQuery.isLoading && !detailQuery.isError && payload && (
                     <>
-                      {tab === "Documents" && <DocumentsTab />}
+                      {tab === "Documents" && <DocumentsTab itemId={selectedRow.id} />}
                       {tab === "Carrier ranking" && (
                         <CarrierRankingTab
                           matches={payload.matches}
@@ -687,16 +688,77 @@ export function SubmissionMarketMatching() {
   );
 }
 
-function DocumentsTab() {
+function DocumentsTab({ itemId }: { itemId: string }) {
+  const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
+  const docsQuery = useQuery({
+    queryKey: ["market-matching", "documents", itemId],
+    queryFn: () => listDocuments(itemId),
+  });
+  const docs = docsQuery.data ?? [];
+  const active = docs.find((d) => d.filename === selectedDoc) ?? docs[0];
+
+  if (docsQuery.isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading documents…
+      </div>
+    );
+  }
+  if (docsQuery.isError) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-destructive">
+        <AlertTriangle className="h-4 w-4" />
+        {docsQuery.error instanceof Error ? docsQuery.error.message : "Failed to load documents."}
+      </div>
+    );
+  }
+  if (docs.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+        No documents recorded for this submission — it was likely run before document persistence
+        was added; re-run it to backfill.
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-xl border border-dashed border-border p-6 text-center">
-      <FileText className="mx-auto h-6 w-6 text-muted-foreground" />
-      <div className="mt-2 text-sm font-medium">Not available yet</div>
-      <p className="mx-auto mt-1 max-w-md text-[11px] text-muted-foreground">
-        Document list, extraction confidence, and field-level citations aren't exposed via the API
-        yet — <code>core.documents</code> and <code>core.extraction</code> are used internally by
-        the pipeline but have no GET route on the market-matching workflow today.
-      </p>
+    <div className="grid gap-5 lg:grid-cols-[1fr_1.6fr]">
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-xs font-medium">{docs.length} document(s)</div>
+          <FoundationBadge kind="extraction" />
+        </div>
+        <ul className="space-y-2 text-sm">
+          {docs.map((d) => (
+            <li key={d.filename}>
+              <button
+                onClick={() => setSelectedDoc(d.filename)}
+                className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition hover:bg-secondary/40 ${
+                  active?.filename === d.filename ? "border-accent/40 bg-accent/5" : "border-border"
+                }`}
+              >
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-secondary">
+                  <FileText className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{d.filename}</div>
+                  <div className="text-[11px] text-muted-foreground">{d.kind}</div>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <div className="mb-2 text-xs font-medium">{active?.filename ?? "Select a document"}</div>
+        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-paper p-4 font-mono text-[11px] text-ink-soft">
+          {active?.content ?? ""}
+        </pre>
+        <div className="mt-2 text-[10px] text-muted-foreground">
+          Real raw document content from the fixture set — not field-level citations (extraction
+          doesn't track per-character source offsets, so there's no highlighted-field view here).
+        </div>
+      </div>
     </div>
   );
 }

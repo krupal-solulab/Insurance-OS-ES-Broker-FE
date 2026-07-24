@@ -157,6 +157,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/es/market-matching/{item_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Documents
+         * @description The raw documents `ingest()` persisted via `LocalDocumentStore` for this
+         *     submission — real fixture content, not extracted/cited fields (see
+         *     core/extraction for that).
+         */
+        get: operations["list_documents_api_es_market_matching__item_id__documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/es/market-matching/{item_id}/approve": {
         parameters: {
             query?: never;
@@ -317,6 +339,15 @@ export interface components {
             compliant: boolean;
             /** Note */
             note: string;
+        };
+        /** DocumentOut */
+        DocumentOut: {
+            /** Filename */
+            filename: string;
+            /** Kind */
+            kind: string;
+            /** Content */
+            content: string;
         };
         /** ExcludedCarrierOut */
         ExcludedCarrierOut: {
@@ -791,6 +822,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_documents_api_es_market_matching__item_id__documents_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOut"][];
                 };
             };
             /** @description Validation Error */

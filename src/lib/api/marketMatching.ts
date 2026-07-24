@@ -11,6 +11,7 @@ export type MarketMatchingPayload = components["schemas"]["MarketMatchingPayload
 export type CarrierMatchOut = components["schemas"]["CarrierMatchOut"];
 export type ExcludedCarrierOut = components["schemas"]["ExcludedCarrierOut"];
 export type DiligentSearchOut = components["schemas"]["DiligentSearchOut"];
+export type DocumentOut = components["schemas"]["DocumentOut"];
 export type ReviewActionVerb = "approve" | "override" | "escalate" | "send" | "issue";
 
 const BASE = "/api/es/market-matching";
@@ -33,6 +34,10 @@ export function listMarketMatching() {
 
 export function getMarketMatching(itemId: string) {
   return api.get<ReviewItemOut>(`${BASE}/${itemId}`);
+}
+
+export function listDocuments(itemId: string) {
+  return api.get<DocumentOut[]>(`${BASE}/${itemId}/documents`);
 }
 
 export function runMarketMatching(submissionRef: string) {
