@@ -264,6 +264,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/es/package-assembly/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Package Assembly
+         * @description Runs one independent assembly pass per selected carrier (FR-2/FR-4:
+         *     never one shared result reused across carriers) and enqueues each as its
+         *     own, independently reviewable ReviewItem (FR-18).
+         */
+        post: operations["run_package_assembly_api_es_package_assembly_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/package-assembly": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Package Assembly */
+        get: operations["list_package_assembly_api_es_package_assembly_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/package-assembly/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Package Assembly */
+        get: operations["get_package_assembly_api_es_package_assembly__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/package-assembly/{item_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_api_es_package_assembly__item_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/package-assembly/{item_id}/edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Edit
+         * @description FR-20's "Edit" action — logged like any other broker action; the
+         *     generic ReviewQueueService has no dedicated "edited" status, so this
+         *     records the audit trail (FR-21) without changing ReviewStatus.
+         */
+        post: operations["edit_api_es_package_assembly__item_id__edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/package-assembly/{item_id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Sent
+         * @description FR-20's "Mark as sent" — a manual log only; this workflow never
+         *     transmits anything automatically (PRD Section 2.2).
+         */
+        post: operations["mark_sent_api_es_package_assembly__item_id__send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -301,6 +417,13 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** BlockingItemOut */
+        BlockingItemOut: {
+            /** Item */
+            item: string;
+            /** Reason */
+            reason: string;
+        };
         /** CarrierMatchOut */
         CarrierMatchOut: {
             /** Carrier Id */
@@ -329,6 +452,23 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** CoverLetterCitationOut */
+        CoverLetterCitationOut: {
+            /** Claim */
+            claim: string;
+            /** Source */
+            source: string;
+        };
+        /** CoverLetterOut */
+        CoverLetterOut: {
+            /** Body */
+            body: string;
+            /**
+             * Citations
+             * @default []
+             */
+            citations: components["schemas"]["CoverLetterCitationOut"][];
+        };
         /** DiligentSearchOut */
         DiligentSearchOut: {
             /** Required */
@@ -339,6 +479,15 @@ export interface components {
             compliant: boolean;
             /** Note */
             note: string;
+        };
+        /** DocChecklistItemOut */
+        DocChecklistItemOut: {
+            /** Document Type */
+            document_type: string;
+            /** Included */
+            included: boolean;
+            /** Source */
+            source?: string | null;
         };
         /** DocumentOut */
         DocumentOut: {
@@ -374,6 +523,16 @@ export interface components {
             confidence: number;
             /** Source */
             source?: string | null;
+        };
+        /** GapItemOut */
+        GapItemOut: {
+            /** Item */
+            item: string;
+            /**
+             * Cover Letter Acknowledgment
+             * @default true
+             */
+            cover_letter_acknowledgment: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -424,15 +583,53 @@ export interface components {
             /** Severity */
             severity: string;
         };
-        /** ReviewItemOut */
-        ReviewItemOut: {
-            /** Id */
-            id: string;
+        /**
+         * PackageAssemblyPayload
+         * @description The FE Package Assembly screen's data needs — one per carrier package,
+         *     even within a multi-carrier simultaneous selection (FR-18).
+         */
+        PackageAssemblyPayload: {
+            /** Package Id */
+            package_id: string;
             /** Submission Id */
             submission_id: string | null;
+            /** Carrier Id */
+            carrier_id: string;
+            /** Carrier Name */
+            carrier_name: string;
             /** Status */
             status: string;
-            payload?: components["schemas"]["MarketMatchingPayload"] | null;
+            /**
+             * Document Checklist
+             * @default []
+             */
+            document_checklist: components["schemas"]["DocChecklistItemOut"][];
+            /**
+             * Supplemental Form Fields
+             * @default []
+             */
+            supplemental_form_fields: components["schemas"]["SupplementalFieldOut"][];
+            /**
+             * Diligent Search Attached
+             * @default false
+             */
+            diligent_search_attached: boolean;
+            cover_letter: components["schemas"]["CoverLetterOut"];
+            /**
+             * Blocking Items
+             * @default []
+             */
+            blocking_items: components["schemas"]["BlockingItemOut"][];
+            /**
+             * Gap Items Disclosed
+             * @default []
+             */
+            gap_items_disclosed: components["schemas"]["GapItemOut"][];
+            /**
+             * Status Log
+             * @default []
+             */
+            status_log: components["schemas"]["StatusLogEntryOut"][];
         };
         /** RiskFactor */
         RiskFactor: {
@@ -443,10 +640,14 @@ export interface components {
             /** Weight */
             weight: number;
         };
-        /** RunRequest */
-        RunRequest: {
-            /** Submission Ref */
-            submission_ref: string;
+        /** StatusLogEntryOut */
+        StatusLogEntryOut: {
+            /** Action */
+            action: string;
+            /** Timestamp */
+            timestamp: string;
+            /** User */
+            user: string;
         };
         /**
          * SubmissionRow
@@ -475,6 +676,20 @@ export interface components {
             status: string;
             /** Received */
             received: string;
+        };
+        /** SupplementalFieldOut */
+        SupplementalFieldOut: {
+            /** Field Name */
+            field_name: string;
+            /** Value */
+            value?: string | null;
+            /**
+             * Auto Filled
+             * @default false
+             */
+            auto_filled: boolean;
+            /** Source Citation */
+            source_citation?: string | null;
         };
         /** TriageDetail */
         TriageDetail: {
@@ -547,6 +762,40 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ReviewItemOut */
+        verticals__es__workflows__market_matching__router__ReviewItemOut: {
+            /** Id */
+            id: string;
+            /** Submission Id */
+            submission_id: string | null;
+            /** Status */
+            status: string;
+            payload?: components["schemas"]["MarketMatchingPayload"] | null;
+        };
+        /** RunRequest */
+        verticals__es__workflows__market_matching__router__RunRequest: {
+            /** Submission Ref */
+            submission_ref: string;
+        };
+        /** ReviewItemOut */
+        verticals__es__workflows__package_assembly__router__ReviewItemOut: {
+            /** Id */
+            id: string;
+            /** Submission Id */
+            submission_id: string | null;
+            /** Carrier Id */
+            carrier_id?: string | null;
+            /** Status */
+            status: string;
+            payload?: components["schemas"]["PackageAssemblyPayload"] | null;
+        };
+        /** RunRequest */
+        verticals__es__workflows__package_assembly__router__RunRequest: {
+            /** Scenario Ref */
+            scenario_ref: string;
+            /** Carrier Id */
+            carrier_id?: string | null;
         };
     };
     responses: never;
@@ -741,7 +990,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RunRequest"];
+                "application/json": components["schemas"]["verticals__es__workflows__market_matching__router__RunRequest"];
             };
         };
         responses: {
@@ -751,7 +1000,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewItemOut"];
+                    "application/json": components["schemas"]["verticals__es__workflows__market_matching__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
@@ -785,7 +1034,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewItemOut"][];
+                    "application/json": components["schemas"]["verticals__es__workflows__market_matching__router__ReviewItemOut"][];
                 };
             };
             /** @description Validation Error */
@@ -821,7 +1070,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewItemOut"];
+                    "application/json": components["schemas"]["verticals__es__workflows__market_matching__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
@@ -893,7 +1142,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewItemOut"];
+                    "application/json": components["schemas"]["verticals__es__workflows__market_matching__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
@@ -929,7 +1178,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewItemOut"];
+                    "application/json": components["schemas"]["verticals__es__workflows__market_matching__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
@@ -965,7 +1214,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewItemOut"];
+                    "application/json": components["schemas"]["verticals__es__workflows__market_matching__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
@@ -1001,7 +1250,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewItemOut"];
+                    "application/json": components["schemas"]["verticals__es__workflows__market_matching__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
@@ -1037,7 +1286,223 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewItemOut"];
+                    "application/json": components["schemas"]["verticals__es__workflows__market_matching__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_package_assembly_api_es_package_assembly_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["verticals__es__workflows__package_assembly__router__RunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__package_assembly__router__ReviewItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_package_assembly_api_es_package_assembly_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__package_assembly__router__ReviewItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_package_assembly_api_es_package_assembly__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__package_assembly__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_es_package_assembly__item_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__package_assembly__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_api_es_package_assembly__item_id__edit_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__package_assembly__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_sent_api_es_package_assembly__item_id__send_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__package_assembly__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
