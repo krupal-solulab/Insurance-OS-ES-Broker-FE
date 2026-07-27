@@ -74,6 +74,18 @@ import {
   type FixtureScenario as EndorsementFixtureScenario,
 } from "@/lib/api/endorsement";
 import {
+  FIXTURE_SCENARIOS as RENEWAL_FIXTURE_SCENARIOS,
+  acceptIncumbent,
+  escalateRenewalRemarketing,
+  getRenewalRemarketing,
+  initiateRemarket,
+  listRenewalRemarketing,
+  runRenewalRemarketing,
+  type ComparisonOutputOut,
+  type FixtureScenario as RenewalFixtureScenario,
+  type RemarketDecisionPayload,
+} from "@/lib/api/renewalRemarketing";
+import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
@@ -6055,6 +6067,391 @@ export function RenewalRemarketing() {
           </Panel>
         </div>
       </div>
+
+      <LiveRenewalsSection />
+    </div>
+  );
+}
+
+const RENEWAL_TRIGGER_TONE: Record<string, "success" | "accent" | "warn" | "danger"> = {
+  NO_REMARKET: "success",
+  LIGHT_REMARKET_CHECK: "accent",
+  FULL_REMARKET: "warn",
+  URGENT_REMARKET: "danger",
+};
+
+function LiveComparisonOption({
+  label,
+  option,
+}: {
+  label: string;
+  option: NonNullable<ComparisonOutputOut["incumbent"]>;
+}) {
+  return (
+    <div className="rounded-lg border border-border p-3 text-sm">
+      <div className="flex items-center gap-2 font-medium">
+        {label}: {option.carrier_name}
+        {option.is_exception_based && <Chip tone="warn">Exception-based</Chip>}
+      </div>
+      <div className="mt-1 grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">
+        {option.premium != null && <span>Premium: ${option.premium.toLocaleString()}</span>}
+        {option.deductible != null && (
+          <span>Deductible: ${option.deductible.toLocaleString()}</span>
+        )}
+        {option.limits && <span className="col-span-2">Limits: {option.limits}</span>}
+      </div>
+      {option.exception_detail && (
+        <div className="mt-2 text-[11px] text-muted-foreground">{option.exception_detail}</div>
+      )}
+    </div>
+  );
+}
+
+function LiveRenewalCard({
+  itemId,
+  payload,
+  onActed,
+}: {
+  itemId: string;
+  payload: RemarketDecisionPayload;
+  onActed: (who: string, what: string, ctx: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [pendingAction, setPendingAction] = useState<"initiate" | "accept" | "escalate" | null>(
+    null,
+  );
+  const who = payload.named_insured ?? itemId;
+  const level = payload.trigger_decision.level;
+  const tone = RENEWAL_TRIGGER_TONE[level] ?? "warn";
+
+  const initiateMutation = useMutation({
+    mutationFn: () => initiateRemarket(itemId),
+    onMutate: () => setPendingAction("initiate"),
+    onSuccess: (item) => {
+      onActed(
+        "You",
+        `Approved — re-invoked Market Matching (real item created at /api/es/market-matching)`,
+        `${who} → status "${item.status}"`,
+      );
+      toast.success("Remarket initiated — a real Market Matching item was created");
+      queryClient.invalidateQueries({ queryKey: ["renewal-remarketing"] });
+    },
+    onError: (err: unknown) =>
+      toast.error(
+        err instanceof Error ? err.message : "Initiate failed (NO_REMARKET can't initiate)",
+      ),
+    onSettled: () => setPendingAction(null),
+  });
+
+  const acceptMutation = useMutation({
+    mutationFn: () => acceptIncumbent(itemId),
+    onMutate: () => setPendingAction("accept"),
+    onSuccess: (item) => {
+      onActed("You", "Accepted incumbent renewal terms", `${who} → status "${item.status}"`);
+      toast.success("Accepted incumbent terms");
+      queryClient.invalidateQueries({ queryKey: ["renewal-remarketing"] });
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Accept failed"),
+    onSettled: () => setPendingAction(null),
+  });
+
+  const escalateMutation = useMutation({
+    mutationFn: () => escalateRenewalRemarketing(itemId),
+    onMutate: () => setPendingAction("escalate"),
+    onSuccess: (item) => {
+      onActed("You", "Escalated urgent remarket", `${who} → status "${item.status}"`);
+      toast.success("Escalated");
+      queryClient.invalidateQueries({ queryKey: ["renewal-remarketing"] });
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Escalate failed"),
+    onSettled: () => setPendingAction(null),
+  });
+
+  const comparison = payload.remarket_execution.comparison_output;
+
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-serif text-xl">{who}</h3>
+            <Chip tone={tone}>{level.replace(/_/g, " ")}</Chip>
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {payload.incumbent_carrier_name}
+          </div>
+        </div>
+        <FoundationBadge kind="matching" />
+      </div>
+
+      <div
+        className={`mt-4 rounded-lg border p-3 text-[12px] ${
+          level === "URGENT_REMARKET"
+            ? "border-2 border-destructive/40 bg-destructive/5"
+            : level === "NO_REMARKET"
+              ? "border-success/30 bg-success/5"
+              : "border-warn/40 bg-warn/5"
+        }`}
+      >
+        {payload.trigger_decision.reasoning.summary}
+      </div>
+
+      <div className="mt-4 grid gap-2 text-[11px] text-muted-foreground sm:grid-cols-2">
+        {payload.exposure_change.pct_change !== 0 && (
+          <span>
+            Exposure change: {payload.exposure_change.pct_change}%
+            {payload.exposure_change.material ? " (material)" : ""}
+          </span>
+        )}
+        {payload.loss_history_change.trend && (
+          <span>Loss trend: {payload.loss_history_change.trend}</span>
+        )}
+        {payload.incumbent_status.non_response_flag && (
+          <span className="text-destructive">Incumbent non-response flagged</span>
+        )}
+        {payload.remarketing_history_detail && (
+          <span className="sm:col-span-2">History: {payload.remarketing_history_detail}</span>
+        )}
+      </div>
+
+      {comparison && (
+        <div className="mt-4">
+          <div className="mb-2 text-xs font-medium">Post-remarket comparison</div>
+          {!comparison.directly_comparable && comparison.material_differences.length > 0 && (
+            <div className="mb-2 rounded-lg border border-warn/40 bg-warn/10 p-2 text-[11px] text-foreground">
+              Not directly comparable — material differences:{" "}
+              {comparison.material_differences.join(", ")}. Never default to the lower premium
+              alone.
+            </div>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {comparison.incumbent && (
+              <LiveComparisonOption label="Incumbent" option={comparison.incumbent} />
+            )}
+            {comparison.alternative && (
+              <LiveComparisonOption label="Alternative" option={comparison.alternative} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {payload.remarket_execution.initiated && (
+        <div className="mt-4 text-[11px] text-muted-foreground">
+          Remarket initiated — Market Matching item:{" "}
+          {payload.remarket_execution.market_matching_output_id}
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+        {level === "NO_REMARKET" ? (
+          <Button
+            variant="primary"
+            disabled={pendingAction === "accept"}
+            onClick={() => acceptMutation.mutate()}
+          >
+            {pendingAction === "accept" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Accept incumbent terms
+          </Button>
+        ) : (
+          <Button
+            variant={level === "URGENT_REMARKET" ? "danger" : "secondary"}
+            disabled={pendingAction === "initiate"}
+            onClick={() => initiateMutation.mutate()}
+          >
+            {pendingAction === "initiate" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {level === "FULL_REMARKET" ? "Approve full remarket" : "Approve light check"}
+          </Button>
+        )}
+        {level === "URGENT_REMARKET" && (
+          <Button
+            variant="secondary"
+            disabled={pendingAction === "escalate"}
+            onClick={() => escalateMutation.mutate()}
+          >
+            {pendingAction === "escalate" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Escalate
+          </Button>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function LiveRenewalsSection() {
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [log, setLog] = useState<LogEntry[]>([]);
+
+  const listQuery = useQuery({
+    queryKey: ["renewal-remarketing", "list"],
+    queryFn: listRenewalRemarketing,
+  });
+  const items = listQuery.data ?? [];
+
+  const detailQuery = useQuery({
+    queryKey: ["renewal-remarketing", "detail", selectedId],
+    queryFn: () => getRenewalRemarketing(selectedId!),
+    enabled: Boolean(selectedId),
+  });
+
+  function appendLog(who: string, what: string, ctx: string) {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf: "—",
+      },
+      ...prev,
+    ]);
+  }
+
+  const runMutation = useMutation({
+    mutationFn: (s: RenewalFixtureScenario) => runRenewalRemarketing(s.ref),
+    onSuccess: (item, s) => {
+      queryClient.invalidateQueries({ queryKey: ["renewal-remarketing"] });
+      toast.success(`${s.label}: review generated`);
+      setSelectedId(item.id);
+    },
+    onError: (err: unknown, s) =>
+      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
+  });
+
+  return (
+    <div className="mt-6 space-y-5">
+      <Panel
+        title="Live renewal reviews — wired to Backend-AI-OS"
+        subtitle="/api/es/renewal-remarketing — real Workflow_16 fixture scenarios (the panels above stay mocked)"
+      >
+        <div className="flex flex-wrap gap-2">
+          {RENEWAL_FIXTURE_SCENARIOS.map((s) => (
+            <Button
+              key={s.ref}
+              variant="secondary"
+              disabled={runMutation.isPending}
+              onClick={() => runMutation.mutate(s)}
+            >
+              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {s.label}
+            </Button>
+          ))}
+        </div>
+      </Panel>
+
+      {listQuery.isLoading && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading renewal reviews…
+        </div>
+      )}
+      {listQuery.isError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load reviews."}
+        </div>
+      )}
+
+      {!listQuery.isLoading && !listQuery.isError && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel title="Renewal reviews" subtitle={`${items.length} generated`}>
+            {items.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No reviews yet — run a scenario above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
+                      selectedId === row.id ? "bg-secondary/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate font-mono text-sm">
+                        {row.submission_id ?? row.id}
+                      </span>
+                      <div className="mt-1.5">
+                        <Chip>{row.status}</Chip>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <div className="space-y-5">
+            {!selectedId ? (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Select a review from the list.
+                </div>
+              </Panel>
+            ) : detailQuery.isLoading ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading review…
+                </div>
+              </Panel>
+            ) : detailQuery.isError ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {detailQuery.error instanceof Error
+                    ? detailQuery.error.message
+                    : "Failed to load review."}
+                </div>
+              </Panel>
+            ) : detailQuery.data?.payload ? (
+              <LiveRenewalCard
+                itemId={detailQuery.data.id}
+                payload={detailQuery.data.payload}
+                onActed={appendLog}
+              />
+            ) : (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No review data for this item.
+                </div>
+              </Panel>
+            )}
+
+            <Panel
+              title="Activity (live section)"
+              subtitle="This session's real actions"
+              actions={<FoundationBadge kind="matching" />}
+            >
+              <ul className="divide-y divide-border">
+                {log.length === 0 ? (
+                  <li className="py-6 text-center text-sm text-muted-foreground">
+                    No activity yet this session.
+                  </li>
+                ) : (
+                  log.slice(0, 10).map((d, i) => (
+                    <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                      <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                        {d.at}
+                      </span>
+                      <div className="flex-1">
+                        <div>
+                          <b>{d.who}</b> — {d.what}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                      </div>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </Panel>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
