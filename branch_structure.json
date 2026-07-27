@@ -1,0 +1,45 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "es-brokers-workflow-04-05",
+    "es-brokers-workflow-06",
+    "es-brokers-workflow-07",
+    "es-brokers-workflow-08",
+    "es-brokers-workflow-09",
+    "es-brokers-workflow-10",
+    "es-brokers-workflow-2",
+    "es-brokers-workflow-3",
+    "live-integration",
+    "main",
+    "nango-connnectors",
+    "origin"
+  ],
+  "parent": {
+    "es-brokers-workflow-04-05": "main",
+    "es-brokers-workflow-06": "main",
+    "es-brokers-workflow-07": "main",
+    "es-brokers-workflow-08": "main",
+    "es-brokers-workflow-09": "main",
+    "es-brokers-workflow-10": "main",
+    "es-brokers-workflow-2": "main",
+    "es-brokers-workflow-3": "main",
+    "live-integration": "main",
+    "main": null,
+    "nango-connnectors": "main",
+    "origin": "main"
+  },
+  "order": [
+    "main",
+    "es-brokers-workflow-04-05",
+    "es-brokers-workflow-06",
+    "es-brokers-workflow-07",
+    "es-brokers-workflow-08",
+    "es-brokers-workflow-09",
+    "es-brokers-workflow-10",
+    "es-brokers-workflow-2",
+    "es-brokers-workflow-3",
+    "live-integration",
+    "nango-connnectors",
+    "origin"
+  ]
+}
