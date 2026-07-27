@@ -86,6 +86,17 @@ import {
   type RemarketDecisionPayload,
 } from "@/lib/api/renewalRemarketing";
 import {
+  FIXTURE_SCENARIOS as COMPLIANCE_FIXTURE_SCENARIOS,
+  approveDiligentSearch,
+  escalateDiligentSearch,
+  getDiligentSearch,
+  listDiligentSearch,
+  runDiligentSearch,
+  type ComplianceRecordPayload,
+  type FixtureScenario as ComplianceFixtureScenario,
+  type StateDeterminationOut,
+} from "@/lib/api/diligentSearch";
+import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
@@ -6797,6 +6808,380 @@ export function DiligentSearchCompliance() {
           </Panel>
         </div>
       </div>
+
+      <LiveComplianceSection />
+    </div>
+  );
+}
+
+const COMPLIANCE_REQUIREMENT_TONE: Record<string, "success" | "warn" | "danger"> = {
+  REQUIRED: "warn",
+  EXEMPT: "success",
+  PENDING_DETERMINATION: "danger",
+};
+
+const COMPLIANCE_OVERALL_TONE: Record<string, "success" | "warn" | "danger"> = {
+  COMPLETE: "success",
+  PARTIAL: "warn",
+  BLOCKED: "danger",
+};
+
+function LiveStateDetermination({ s }: { s: StateDeterminationOut }) {
+  const tone = COMPLIANCE_REQUIREMENT_TONE[s.requirement_status] ?? "warn";
+  return (
+    <li className="rounded-lg border border-border p-3 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium">{s.state}</span>
+        <Chip tone={tone}>{s.requirement_status.replace(/_/g, " ")}</Chip>
+      </div>
+      {s.exemption_basis && (
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          <b className="text-foreground">Exemption basis:</b> {s.exemption_basis}
+        </div>
+      )}
+      {s.requirement_status === "REQUIRED" && (
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          {s.declinations_on_file.length} declination(s) on file
+          {s.declinations_required != null ? ` of ${s.declinations_required} required` : ""} ·{" "}
+          <Chip
+            tone={
+              s.sufficiency_status === "SUFFICIENT"
+                ? "success"
+                : s.sufficiency_status === "INSUFFICIENT"
+                  ? "danger"
+                  : "neutral"
+            }
+          >
+            {s.sufficiency_status.replace(/_/g, " ")}
+          </Chip>
+        </div>
+      )}
+      {s.declinations_on_file.length > 0 && (
+        <ul className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+          {s.declinations_on_file.map((dec, i) => (
+            <li key={i} className="flex items-center gap-1.5">
+              {dec.written_evidence ? (
+                <CheckCircle2 className="h-3 w-3 shrink-0 text-success" />
+              ) : (
+                <AlertTriangle className="h-3 w-3 shrink-0 text-warn" />
+              )}
+              {dec.carrier}
+              {dec.date ? ` — ${dec.date}` : ""}
+              {!dec.written_evidence && " (verbal only — not sufficient)"}
+            </li>
+          ))}
+        </ul>
+      )}
+      {s.gap_detail && (
+        <div className="mt-2 rounded-md border border-warn/30 bg-warn/5 p-2 text-[11px] text-foreground">
+          {s.gap_detail}
+        </div>
+      )}
+      <div className="mt-2 flex items-center gap-2 text-[11px]">
+        <span className="text-muted-foreground">Document:</span>
+        {s.document_generated ? (
+          <Chip tone="success">
+            <CheckCircle2 className="h-2.5 w-2.5" /> Generated
+          </Chip>
+        ) : (
+          <Chip tone="neutral">Not generated</Chip>
+        )}
+      </div>
+      {s.generated_document_text && (
+        <div className="mt-2 whitespace-pre-wrap rounded-md border border-border bg-secondary/30 p-2 text-[11px]">
+          {s.generated_document_text}
+        </div>
+      )}
+      {s.retention_period_years == null ? (
+        <div className="mt-2 text-[10px] text-muted-foreground">
+          Retention period: not yet sourced (FR-8 — never guessed).
+        </div>
+      ) : (
+        <div className="mt-2 text-[10px] text-muted-foreground">
+          Retention period: {s.retention_period_years} years
+        </div>
+      )}
+    </li>
+  );
+}
+
+function LiveComplianceCard({
+  itemId,
+  payload,
+  onActed,
+}: {
+  itemId: string;
+  payload: ComplianceRecordPayload;
+  onActed: (who: string, what: string, ctx: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [pendingAction, setPendingAction] = useState<"approve" | "escalate" | null>(null);
+  const who = payload.named_insured ?? itemId;
+  const hasPending = payload.state_determinations.some(
+    (s) => s.requirement_status === "PENDING_DETERMINATION",
+  );
+
+  const approveMutation = useMutation({
+    mutationFn: () => approveDiligentSearch(itemId),
+    onMutate: () => setPendingAction("approve"),
+    onSuccess: (item) => {
+      onActed("You", "Approved compliance determination", `${who} → status "${item.status}"`);
+      toast.success("Approved");
+      queryClient.invalidateQueries({ queryKey: ["diligent-search"] });
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Approve failed"),
+    onSettled: () => setPendingAction(null),
+  });
+
+  const escalateMutation = useMutation({
+    mutationFn: () => escalateDiligentSearch(itemId),
+    onMutate: () => setPendingAction("escalate"),
+    onSuccess: (item) => {
+      onActed(
+        "You",
+        "Escalated ambiguous determination to compliance/legal",
+        `${who} → status "${item.status}"`,
+      );
+      toast.success("Escalated");
+      queryClient.invalidateQueries({ queryKey: ["diligent-search"] });
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Escalate failed"),
+    onSettled: () => setPendingAction(null),
+  });
+
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-serif text-xl">{who}</h3>
+            <Chip tone={COMPLIANCE_OVERALL_TONE[payload.overall_status] ?? "warn"}>
+              {payload.overall_status}
+            </Chip>
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {payload.state_determinations.length} state(s)
+          </div>
+        </div>
+        <FoundationBadge kind="matching" />
+      </div>
+
+      {payload.overall_status === "BLOCKED" && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div className="text-[12px] text-foreground">
+            <b>Zero-tolerance gate held.</b> No document generated for any state falling short of
+            sufficient written evidence.
+          </div>
+        </div>
+      )}
+
+      <ul className="mt-4 space-y-2">
+        {payload.state_determinations.map((s) => (
+          <LiveStateDetermination key={s.state} s={s} />
+        ))}
+      </ul>
+
+      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+        <Button
+          variant="primary"
+          disabled={pendingAction === "approve"}
+          onClick={() => approveMutation.mutate()}
+        >
+          {pendingAction === "approve" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Approve
+        </Button>
+        {hasPending && (
+          <Button
+            variant="secondary"
+            disabled={pendingAction === "escalate"}
+            onClick={() => escalateMutation.mutate()}
+          >
+            {pendingAction === "escalate" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            <Gavel className="h-3.5 w-3.5" />
+            Escalate ambiguous state to compliance
+          </Button>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function LiveComplianceSection() {
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [log, setLog] = useState<LogEntry[]>([]);
+
+  const listQuery = useQuery({
+    queryKey: ["diligent-search", "list"],
+    queryFn: listDiligentSearch,
+  });
+  const items = listQuery.data ?? [];
+
+  const detailQuery = useQuery({
+    queryKey: ["diligent-search", "detail", selectedId],
+    queryFn: () => getDiligentSearch(selectedId!),
+    enabled: Boolean(selectedId),
+  });
+
+  function appendLog(who: string, what: string, ctx: string) {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf: "—",
+      },
+      ...prev,
+    ]);
+  }
+
+  const runMutation = useMutation({
+    mutationFn: (s: ComplianceFixtureScenario) => runDiligentSearch(s.ref),
+    onSuccess: (item, s) => {
+      queryClient.invalidateQueries({ queryKey: ["diligent-search"] });
+      toast.success(`${s.label}: determination generated`);
+      setSelectedId(item.id);
+    },
+    onError: (err: unknown, s) =>
+      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
+  });
+
+  return (
+    <div className="mt-6 space-y-5">
+      <Panel
+        title="Live compliance records — wired to Backend-AI-OS"
+        subtitle="/api/es/diligent-search — real Workflow_17 fixture scenarios (the panels above stay mocked)"
+      >
+        <div className="flex flex-wrap gap-2">
+          {COMPLIANCE_FIXTURE_SCENARIOS.map((s) => (
+            <Button
+              key={s.ref}
+              variant="secondary"
+              disabled={runMutation.isPending}
+              onClick={() => runMutation.mutate(s)}
+            >
+              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {s.label}
+            </Button>
+          ))}
+        </div>
+      </Panel>
+
+      {listQuery.isLoading && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading compliance records…
+        </div>
+      )}
+      {listQuery.isError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load records."}
+        </div>
+      )}
+
+      {!listQuery.isLoading && !listQuery.isError && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel title="Compliance records" subtitle={`${items.length} generated`}>
+            {items.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No records yet — run a scenario above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
+                      selectedId === row.id ? "bg-secondary/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate font-mono text-sm">
+                        {row.submission_id ?? row.id}
+                      </span>
+                      <div className="mt-1.5">
+                        <Chip>{row.status}</Chip>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <div className="space-y-5">
+            {!selectedId ? (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Select a record from the list.
+                </div>
+              </Panel>
+            ) : detailQuery.isLoading ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading record…
+                </div>
+              </Panel>
+            ) : detailQuery.isError ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {detailQuery.error instanceof Error
+                    ? detailQuery.error.message
+                    : "Failed to load record."}
+                </div>
+              </Panel>
+            ) : detailQuery.data?.payload ? (
+              <LiveComplianceCard
+                itemId={detailQuery.data.id}
+                payload={detailQuery.data.payload}
+                onActed={appendLog}
+              />
+            ) : (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No record data for this item.
+                </div>
+              </Panel>
+            )}
+
+            <Panel
+              title="Activity (live section)"
+              subtitle="This session's real actions"
+              actions={<FoundationBadge kind="matching" />}
+            >
+              <ul className="divide-y divide-border">
+                {log.length === 0 ? (
+                  <li className="py-6 text-center text-sm text-muted-foreground">
+                    No activity yet this session.
+                  </li>
+                ) : (
+                  log.slice(0, 10).map((d, i) => (
+                    <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                      <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                        {d.at}
+                      </span>
+                      <div className="flex-1">
+                        <div>
+                          <b>{d.who}</b> — {d.what}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                      </div>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </Panel>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

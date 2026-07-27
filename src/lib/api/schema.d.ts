@@ -1020,6 +1020,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/es/diligent-search/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Diligent Search */
+        post: operations["run_diligent_search_api_es_diligent_search_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/diligent-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Diligent Search */
+        get: operations["list_diligent_search_api_es_diligent_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/diligent-search/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Diligent Search */
+        get: operations["get_diligent_search_api_es_diligent_search__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/diligent-search/{item_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_api_es_diligent_search__item_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/diligent-search/{item_id}/escalate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Escalate
+         * @description FR-7: escalates an ambiguous/account-specific PENDING_DETERMINATION
+         *     state (e.g. Scenario 04's Florida) to compliance/legal review.
+         */
+        post: operations["escalate_api_es_diligent_search__item_id__escalate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1302,6 +1391,19 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** ComplianceRecordPayload */
+        ComplianceRecordPayload: {
+            /** Compliance Record Id */
+            compliance_record_id: string;
+            /** Submission Id */
+            submission_id?: string | null;
+            /** Named Insured */
+            named_insured?: string | null;
+            /** State Determinations */
+            state_determinations: components["schemas"]["StateDeterminationOut"][];
+            /** Overall Status */
+            overall_status: string;
+        };
         /** ConsistencyCheck */
         ConsistencyCheck: {
             /** Label */
@@ -1327,6 +1429,18 @@ export interface components {
              * @default []
              */
             citations: components["schemas"]["CoverLetterCitationOut"][];
+        };
+        /** DeclinationOut */
+        DeclinationOut: {
+            /** Carrier */
+            carrier: string;
+            /** Date */
+            date?: string | null;
+            /**
+             * Written Evidence
+             * @default false
+             */
+            written_evidence: boolean;
         };
         /** DeductiblesOut */
         DeductiblesOut: {
@@ -1962,6 +2076,38 @@ export interface components {
             /** Weight */
             weight: number;
         };
+        /** StateDeterminationOut */
+        StateDeterminationOut: {
+            /** State */
+            state: string;
+            /** Requirement Status */
+            requirement_status: string;
+            /** Exemption Basis */
+            exemption_basis?: string | null;
+            /** Declinations Required */
+            declinations_required?: number | null;
+            /**
+             * Declinations On File
+             * @default []
+             */
+            declinations_on_file: components["schemas"]["DeclinationOut"][];
+            /**
+             * Sufficiency Status
+             * @default NOT_APPLICABLE
+             */
+            sufficiency_status: string;
+            /** Gap Detail */
+            gap_detail?: string | null;
+            /**
+             * Document Generated
+             * @default false
+             */
+            document_generated: boolean;
+            /** Generated Document Text */
+            generated_document_text?: string | null;
+            /** Retention Period Years */
+            retention_period_years?: number | null;
+        };
         /** StatusLogEntryOut */
         StatusLogEntryOut: {
             /** Action */
@@ -2171,6 +2317,21 @@ export interface components {
             lifecycle_stage: string;
             /** Status */
             status: string;
+        };
+        /** ReviewItemOut */
+        verticals__es__workflows__diligent_search__router__ReviewItemOut: {
+            /** Id */
+            id: string;
+            /** Submission Id */
+            submission_id: string | null;
+            /** Status */
+            status: string;
+            payload?: components["schemas"]["ComplianceRecordPayload"] | null;
+        };
+        /** RunRequest */
+        verticals__es__workflows__diligent_search__router__RunRequest: {
+            /** Scenario Ref */
+            scenario_ref: string;
         };
         /** ReviewItemOut */
         verticals__es__workflows__endorsement__router__ReviewItemOut: {
@@ -4145,6 +4306,186 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["verticals__es__workflows__renewal_remarketing__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_diligent_search_api_es_diligent_search_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["verticals__es__workflows__diligent_search__router__RunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__diligent_search__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_diligent_search_api_es_diligent_search_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__diligent_search__router__ReviewItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_diligent_search_api_es_diligent_search__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__diligent_search__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_es_diligent_search__item_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__diligent_search__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    escalate_api_es_diligent_search__item_id__escalate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__diligent_search__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
