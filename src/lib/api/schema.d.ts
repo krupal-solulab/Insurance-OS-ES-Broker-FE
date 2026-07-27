@@ -903,6 +903,123 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/es/renewal-remarketing/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Renewal Remarketing */
+        post: operations["run_renewal_remarketing_api_es_renewal_remarketing_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/renewal-remarketing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Renewal Remarketing */
+        get: operations["list_renewal_remarketing_api_es_renewal_remarketing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/renewal-remarketing/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Renewal Remarketing */
+        get: operations["get_renewal_remarketing_api_es_renewal_remarketing__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/renewal-remarketing/{item_id}/initiate-remarket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Initiate Remarket
+         * @description FR-16: "Approve light check" / "Approve full remarket" — both use
+         *     this same action; the level distinction is already in the trigger
+         *     decision, not the action itself. See module docstring for the known
+         *     bind-time-data limitation.
+         */
+        post: operations["initiate_remarket_api_es_renewal_remarketing__item_id__initiate_remarket_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/renewal-remarketing/{item_id}/accept-incumbent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Incumbent
+         * @description FR-16: "Accept incumbent terms (NO_REMARKET)" — workflow-owned
+         *     since ``ReviewAction`` has no matching value and this records
+         *     ``final_decision``, which none of the frozen actions carry.
+         */
+        post: operations["accept_incumbent_api_es_renewal_remarketing__item_id__accept_incumbent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/renewal-remarketing/{item_id}/escalate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Escalate
+         * @description FR-16: "Escalate urgent remarket" — reuses the existing frozen
+         *     ``ReviewAction.ESCALATE``, which already fits.
+         */
+        post: operations["escalate_api_es_renewal_remarketing__item_id__escalate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1107,6 +1224,39 @@ export interface components {
              * @default []
              */
             material_differences: string[];
+        };
+        /** ComparisonOptionOut */
+        ComparisonOptionOut: {
+            /** Carrier Name */
+            carrier_name: string;
+            /** Premium */
+            premium?: number | null;
+            /** Limits */
+            limits?: string | null;
+            /** Deductible */
+            deductible?: number | null;
+            /**
+             * Is Exception Based
+             * @default false
+             */
+            is_exception_based: boolean;
+            /** Exception Detail */
+            exception_detail?: string | null;
+        };
+        /** ComparisonOutputOut */
+        ComparisonOutputOut: {
+            /**
+             * Directly Comparable
+             * @default true
+             */
+            directly_comparable: boolean;
+            /**
+             * Material Differences
+             * @default []
+             */
+            material_differences: string[];
+            incumbent?: components["schemas"]["ComparisonOptionOut"] | null;
+            alternative?: components["schemas"]["ComparisonOptionOut"] | null;
         };
         /**
          * ComparisonPayload
@@ -1378,6 +1528,31 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** ExposureChangeOut */
+        ExposureChangeOut: {
+            /**
+             * Fields Changed
+             * @default []
+             */
+            fields_changed: string[];
+            /**
+             * Material
+             * @default false
+             */
+            material: boolean;
+            /**
+             * Already Endorsed
+             * @default false
+             */
+            already_endorsed: boolean;
+            /**
+             * Pct Change
+             * @default 0
+             */
+            pct_change: number;
+            /** Note */
+            note?: string | null;
+        };
         /** ExtractedFieldOut */
         ExtractedFieldOut: {
             /** Key */
@@ -1431,6 +1606,18 @@ export interface components {
             /** Source Email Reference */
             source_email_reference: string;
         };
+        /** FinalDecisionOut */
+        FinalDecisionOut: {
+            /**
+             * Outcome
+             * @default pending
+             */
+            outcome: string;
+            /** Decided By */
+            decided_by?: string | null;
+            /** Timestamp */
+            timestamp?: string | null;
+        };
         /** GapItemOut */
         GapItemOut: {
             /** Item */
@@ -1459,6 +1646,21 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** IncumbentStatusOut */
+        IncumbentStatusOut: {
+            /**
+             * Renewal Terms Received
+             * @default false
+             */
+            renewal_terms_received: boolean;
+            /** Days Before Expiration At Receipt */
+            days_before_expiration_at_receipt?: number | null;
+            /**
+             * Non Response Flag
+             * @default false
+             */
+            non_response_flag: boolean;
+        };
         /** IssuedPolicyReconciliationOut */
         IssuedPolicyReconciliationOut: {
             /**
@@ -1471,6 +1673,24 @@ export interface components {
              * @default []
              */
             discrepancy_detail: components["schemas"]["verticals__es__workflows__binder_issuance__schema__DiscrepancyOut"][];
+        };
+        /** LossHistoryChangeOut */
+        LossHistoryChangeOut: {
+            /**
+             * New Claims Count
+             * @default 0
+             */
+            new_claims_count: number;
+            /**
+             * Favorable Resolutions Count
+             * @default 0
+             */
+            favorable_resolutions_count: number;
+            /**
+             * Trend
+             * @default flat
+             */
+            trend: string;
         };
         /** LossMetrics */
         LossMetrics: {
@@ -1618,6 +1838,13 @@ export interface components {
             /** Term Total Days */
             term_total_days: number;
         };
+        /** ReasoningCitationOut */
+        ReasoningCitationOut: {
+            /** Claim */
+            claim: string;
+            /** Source */
+            source: string;
+        };
         /** RecommendationCitationOut */
         RecommendationCitationOut: {
             /** Claim */
@@ -1640,6 +1867,77 @@ export interface components {
              * @default []
              */
             citations: components["schemas"]["RecommendationCitationOut"][];
+        };
+        /** RemarketDecisionPayload */
+        RemarketDecisionPayload: {
+            /** Renewal Review Id */
+            renewal_review_id: string;
+            /** Bind Id */
+            bind_id?: string | null;
+            /** Named Insured */
+            named_insured?: string | null;
+            /** Incumbent Carrier Id */
+            incumbent_carrier_id?: string | null;
+            /**
+             * Incumbent Carrier Name
+             * @default
+             */
+            incumbent_carrier_name: string;
+            /**
+             * Is Comparison Stage
+             * @default false
+             */
+            is_comparison_stage: boolean;
+            /**
+             * @default {
+             *       "fields_changed": [],
+             *       "material": false,
+             *       "already_endorsed": false,
+             *       "pct_change": 0
+             *     }
+             */
+            exposure_change: components["schemas"]["ExposureChangeOut"];
+            /**
+             * @default {
+             *       "new_claims_count": 0,
+             *       "favorable_resolutions_count": 0,
+             *       "trend": "flat"
+             *     }
+             */
+            loss_history_change: components["schemas"]["LossHistoryChangeOut"];
+            /**
+             * @default {
+             *       "renewal_terms_received": false,
+             *       "non_response_flag": false
+             *     }
+             */
+            incumbent_status: components["schemas"]["IncumbentStatusOut"];
+            /** Remarketing History Detail */
+            remarketing_history_detail?: string | null;
+            trigger_decision: components["schemas"]["TriggerDecisionOut"];
+            /**
+             * @default {
+             *       "initiated": false
+             *     }
+             */
+            remarket_execution: components["schemas"]["RemarketExecutionOut"];
+            /**
+             * @default {
+             *       "outcome": "pending"
+             *     }
+             */
+            final_decision: components["schemas"]["FinalDecisionOut"];
+        };
+        /** RemarketExecutionOut */
+        RemarketExecutionOut: {
+            /**
+             * Initiated
+             * @default false
+             */
+            initiated: boolean;
+            /** Market Matching Output Id */
+            market_matching_output_id?: string | null;
+            comparison_output?: components["schemas"]["ComparisonOutputOut"] | null;
         };
         /** RequestedChangeOut */
         RequestedChangeOut: {
@@ -1773,6 +2071,25 @@ export interface components {
             lowConfidence: string[];
             /** Timestamp */
             timestamp: string;
+        };
+        /** TriggerDecisionOut */
+        TriggerDecisionOut: {
+            /**
+             * Level
+             * @default NO_REMARKET
+             */
+            level: string;
+            reasoning: components["schemas"]["TriggerReasoningOut"];
+        };
+        /** TriggerReasoningOut */
+        TriggerReasoningOut: {
+            /** Summary */
+            summary: string;
+            /**
+             * Citations
+             * @default []
+             */
+            citations: components["schemas"]["ReasoningCitationOut"][];
         };
         /** UrgencyFlagOut */
         UrgencyFlagOut: {
@@ -1941,6 +2258,21 @@ export interface components {
              * @default false
              */
             is_dependency: boolean;
+        };
+        /** ReviewItemOut */
+        verticals__es__workflows__renewal_remarketing__router__ReviewItemOut: {
+            /** Id */
+            id: string;
+            /** Submission Id */
+            submission_id: string | null;
+            /** Status */
+            status: string;
+            payload?: components["schemas"]["RemarketDecisionPayload"] | null;
+        };
+        /** RunRequest */
+        verticals__es__workflows__renewal_remarketing__router__RunRequest: {
+            /** Scenario Ref */
+            scenario_ref: string;
         };
     };
     responses: never;
@@ -3597,6 +3929,222 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["verticals__es__workflows__endorsement__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_renewal_remarketing_api_es_renewal_remarketing_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["verticals__es__workflows__renewal_remarketing__router__RunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__renewal_remarketing__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_renewal_remarketing_api_es_renewal_remarketing_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__renewal_remarketing__router__ReviewItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_renewal_remarketing_api_es_renewal_remarketing__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__renewal_remarketing__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    initiate_remarket_api_es_renewal_remarketing__item_id__initiate_remarket_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__renewal_remarketing__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_incumbent_api_es_renewal_remarketing__item_id__accept_incumbent_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__renewal_remarketing__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    escalate_api_es_renewal_remarketing__item_id__escalate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__renewal_remarketing__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
