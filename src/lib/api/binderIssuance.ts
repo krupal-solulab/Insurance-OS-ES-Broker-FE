@@ -8,10 +8,13 @@ import type { components } from "./schema";
 
 // Qualified with the module path — every ES workflow router defines its own
 // `ReviewItemOut`/`RunRequest` classes (see marketMatching.ts's comment).
+// `DiscrepancyOut` needs the same treatment as of Workflow 6 — endorsement
+// defines its own class with the same name.
 export type ReviewItemOut =
   components["schemas"]["verticals__es__workflows__binder_issuance__router__ReviewItemOut"];
 export type BindCoordinationPayload = components["schemas"]["BindCoordinationPayload"];
-export type DiscrepancyOut = components["schemas"]["DiscrepancyOut"];
+export type DiscrepancyOut =
+  components["schemas"]["verticals__es__workflows__binder_issuance__schema__DiscrepancyOut"];
 export type OngoingObligationOut = components["schemas"]["OngoingObligationOut"];
 export type DiscrepancyResolution = "accept_carrier_version" | "flag_carrier_error";
 export type PolicyDiscrepancyResolution = "accept_issued_version" | "flag_carrier_error";

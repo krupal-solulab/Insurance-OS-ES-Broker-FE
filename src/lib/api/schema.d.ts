@@ -786,6 +786,123 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/es/endorsement/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Endorsement */
+        post: operations["run_endorsement_api_es_endorsement_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/endorsement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Endorsement */
+        get: operations["list_endorsement_api_es_endorsement_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/endorsement/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Endorsement */
+        get: operations["get_endorsement_api_es_endorsement__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/endorsement/{item_id}/resolve-discrepancy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Discrepancy
+         * @description FR-15/FR-19: broker explicitly resolves an EP-05 partial-fulfillment
+         *     discrepancy — required before the endorsement-confirmed trigger can
+         *     fire. Workflow-owned: ``ReviewAction`` has no matching frozen value,
+         *     same pattern as Binder & Issuance's resolve-*-discrepancy endpoints.
+         */
+        post: operations["resolve_discrepancy_api_es_endorsement__item_id__resolve_discrepancy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/endorsement/{item_id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send
+         * @description FR-19: "Send routine request" / "Send for underwriting review with
+         *     context" — both map to the same generic SEND action; the framing
+         *     difference already lives in the drafted request text itself.
+         */
+        post: operations["send_api_es_endorsement__item_id__send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/endorsement/{item_id}/escalate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Escalate
+         * @description FR-19: "Escalate appetite-unknown to carrier" — reuses the existing
+         *     frozen ``ReviewAction.ESCALATE``, which already fits.
+         */
+        post: operations["escalate_api_es_endorsement__item_id__escalate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -811,6 +928,26 @@ export interface components {
             ctx?: string | null;
             /** Conf */
             conf?: string | null;
+        };
+        /** AppetiteRecheckOut */
+        AppetiteRecheckOut: {
+            /** Applicable */
+            applicable: boolean;
+            /**
+             * Outcome
+             * @default NOT_APPLICABLE
+             */
+            outcome: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /**
+             * State Licensing Clarification Needed
+             * @default false
+             */
+            state_licensing_clarification_needed: boolean;
         };
         /** AppetiteResultOut */
         AppetiteResultOut: {
@@ -920,7 +1057,7 @@ export interface components {
              * Discrepancy Detail
              * @default []
              */
-            discrepancy_detail: components["schemas"]["DiscrepancyOut"][];
+            discrepancy_detail: components["schemas"]["verticals__es__workflows__binder_issuance__schema__DiscrepancyOut"][];
         };
         /** CarrierMatchOut */
         CarrierMatchOut: {
@@ -940,6 +1077,26 @@ export interface components {
              * @default []
              */
             flags: string[];
+        };
+        /** CarrierResponseOut */
+        CarrierResponseOut: {
+            /** Endorsement Number */
+            endorsement_number?: string | null;
+            /**
+             * Issued Items
+             * @default []
+             */
+            issued_items: string[];
+            /**
+             * Reconciliation Status
+             * @default PENDING
+             */
+            reconciliation_status: string;
+            /**
+             * Discrepancy Detail
+             * @default []
+             */
+            discrepancy_detail: components["schemas"]["verticals__es__workflows__endorsement__schema__DiscrepancyOut"][];
         };
         /** ComparabilityAssessmentOut */
         ComparabilityAssessmentOut: {
@@ -1039,15 +1196,6 @@ export interface components {
             /** Note */
             note: string;
         };
-        /** DiscrepancyOut */
-        DiscrepancyOut: {
-            /** Field */
-            field: string;
-            /** Requested Or Bound */
-            requested_or_bound: string;
-            /** Confirmed Or Issued */
-            confirmed_or_issued: string;
-        };
         /** DocChecklistItemOut */
         DocChecklistItemOut: {
             /** Document Type */
@@ -1133,12 +1281,91 @@ export interface components {
             /** Sent Timestamp */
             sent_timestamp?: string | null;
         };
+        /** DraftedRequestCitationOut */
+        DraftedRequestCitationOut: {
+            /** Claim */
+            claim: string;
+            /** Source */
+            source: string;
+        };
+        /** DraftedRequestOut */
+        DraftedRequestOut: {
+            /** Body */
+            body: string;
+            /**
+             * Citations
+             * @default []
+             */
+            citations: components["schemas"]["DraftedRequestCitationOut"][];
+        };
         /** EndorsementOut */
         EndorsementOut: {
             /** Type */
             type: string;
             /** Basis */
             basis: string;
+        };
+        /** EndorsementRequestPayload */
+        EndorsementRequestPayload: {
+            /** Endorsement Request Id */
+            endorsement_request_id: string;
+            /** Bind Id */
+            bind_id?: string | null;
+            /** Named Insured */
+            named_insured?: string | null;
+            /** Carrier Id */
+            carrier_id?: string | null;
+            /**
+             * Carrier Name
+             * @default
+             */
+            carrier_name: string;
+            requested_change: components["schemas"]["RequestedChangeOut"];
+            /**
+             * Requested Items
+             * @default []
+             */
+            requested_items: string[];
+            /**
+             * Classification
+             * @default UNDERWRITING_REVIEW_REQUIRED
+             */
+            classification: string;
+            /**
+             * Classification Reasoning
+             * @default
+             */
+            classification_reasoning: string;
+            /**
+             * @default {
+             *       "applicable": false,
+             *       "outcome": "NOT_APPLICABLE",
+             *       "detail": "",
+             *       "state_licensing_clarification_needed": false
+             *     }
+             */
+            appetite_recheck: components["schemas"]["AppetiteRecheckOut"];
+            /** @default {} */
+            premium_impact: components["schemas"]["PremiumImpactOut"];
+            drafted_request: components["schemas"]["DraftedRequestOut"];
+            /**
+             * @default {
+             *       "issued_items": [],
+             *       "reconciliation_status": "PENDING",
+             *       "discrepancy_detail": []
+             *     }
+             */
+            carrier_response: components["schemas"]["CarrierResponseOut"];
+            /**
+             * Downstream Trigger Fired
+             * @default false
+             */
+            downstream_trigger_fired: boolean;
+            /**
+             * Status Log
+             * @default []
+             */
+            status_log: components["schemas"]["StatusLogEntryOut"][];
         };
         /** ExcludedCarrierOut */
         ExcludedCarrierOut: {
@@ -1243,7 +1470,7 @@ export interface components {
              * Discrepancy Detail
              * @default []
              */
-            discrepancy_detail: components["schemas"]["DiscrepancyOut"][];
+            discrepancy_detail: components["schemas"]["verticals__es__workflows__binder_issuance__schema__DiscrepancyOut"][];
         };
         /** LossMetrics */
         LossMetrics: {
@@ -1376,6 +1603,21 @@ export interface components {
              */
             overdue_alert_fired: boolean;
         };
+        /** PremiumImpactOut */
+        PremiumImpactOut: {
+            /** Premium Bearing */
+            premium_bearing?: boolean | null;
+            proration_inputs?: components["schemas"]["ProrationInputsOut"] | null;
+        };
+        /** ProrationInputsOut */
+        ProrationInputsOut: {
+            /** Days Elapsed */
+            days_elapsed: number;
+            /** Days Remaining */
+            days_remaining: number;
+            /** Term Total Days */
+            term_total_days: number;
+        };
         /** RecommendationCitationOut */
         RecommendationCitationOut: {
             /** Claim */
@@ -1398,6 +1640,15 @@ export interface components {
              * @default []
              */
             citations: components["schemas"]["RecommendationCitationOut"][];
+        };
+        /** RequestedChangeOut */
+        RequestedChangeOut: {
+            /** Type */
+            type: string;
+            /** Detail */
+            detail: string;
+            /** Requested Effective Date */
+            requested_effective_date?: string | null;
         };
         /** ResolveDiscrepancyRequest */
         ResolveDiscrepancyRequest: {
@@ -1584,6 +1835,15 @@ export interface components {
             /** As Of */
             as_of?: string | null;
         };
+        /** DiscrepancyOut */
+        verticals__es__workflows__binder_issuance__schema__DiscrepancyOut: {
+            /** Field */
+            field: string;
+            /** Requested Or Bound */
+            requested_or_bound: string;
+            /** Confirmed Or Issued */
+            confirmed_or_issued: string;
+        };
         /** SubjectivityOut */
         verticals__es__workflows__binder_issuance__schema__SubjectivityOut: {
             /** Description */
@@ -1594,6 +1854,28 @@ export interface components {
             lifecycle_stage: string;
             /** Status */
             status: string;
+        };
+        /** ReviewItemOut */
+        verticals__es__workflows__endorsement__router__ReviewItemOut: {
+            /** Id */
+            id: string;
+            /** Submission Id */
+            submission_id: string | null;
+            /** Status */
+            status: string;
+            payload?: components["schemas"]["EndorsementRequestPayload"] | null;
+        };
+        /** RunRequest */
+        verticals__es__workflows__endorsement__router__RunRequest: {
+            /** Scenario Ref */
+            scenario_ref: string;
+        };
+        /** DiscrepancyOut */
+        verticals__es__workflows__endorsement__schema__DiscrepancyOut: {
+            /** Requested Item */
+            requested_item: string;
+            /** Issued Item */
+            issued_item?: string | null;
         };
         /** ReviewItemOut */
         verticals__es__workflows__market_matching__router__ReviewItemOut: {
@@ -3095,6 +3377,226 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["verticals__es__workflows__binder_issuance__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_endorsement_api_es_endorsement_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["verticals__es__workflows__endorsement__router__RunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__endorsement__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_endorsement_api_es_endorsement_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__endorsement__router__ReviewItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_endorsement_api_es_endorsement__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__endorsement__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_discrepancy_api_es_endorsement__item_id__resolve_discrepancy_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveDiscrepancyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__endorsement__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_api_es_endorsement__item_id__send_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__endorsement__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    escalate_api_es_endorsement__item_id__escalate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__endorsement__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
