@@ -36,6 +36,32 @@ import {
   type FixtureTrigger,
 } from "@/lib/api/agentCommunication";
 import {
+  FIXTURE_SCENARIOS as QUOTE_FIXTURE_SCENARIOS,
+  getQuoteComparison,
+  listQuoteComparison,
+  markLapsed,
+  requestRevisedTerms,
+  runQuoteComparison,
+  selectQuote,
+  type ComparisonPayload,
+  type ExtractedQuoteOut,
+  type FixtureScenario,
+} from "@/lib/api/quoteComparison";
+import {
+  FIXTURE_SCENARIOS as BINDER_FIXTURE_SCENARIOS,
+  escalateBinderIssuance,
+  getBinderIssuance,
+  listBinderIssuance,
+  resolveConfirmationDiscrepancy,
+  resolvePolicyDiscrepancy,
+  runBinderIssuance,
+  type BindCoordinationPayload,
+  type DiscrepancyOut,
+  type DiscrepancyResolution,
+  type FixtureScenario as BinderFixtureScenario,
+  type PolicyDiscrepancyResolution,
+} from "@/lib/api/binderIssuance";
+import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
@@ -3133,6 +3159,436 @@ export function QuoteComparison() {
           </div>
         </Panel>
       </div>
+
+      <LiveComparisonsSection />
+    </div>
+  );
+}
+
+const COMPARISON_MODE_LABEL: Record<
+  string,
+  { label: string; tone: "success" | "warn" | "danger" }
+> = {
+  SINGLE_RECOMMENDATION: { label: "Single primary recommendation", tone: "success" },
+  MULTI_OPTION: { label: "Multi-option trade-off", tone: "warn" },
+  SINGLE_QUOTE_URGENT: { label: "Single quote — urgent", tone: "danger" },
+  SINGLE_QUOTE_ROUTINE: { label: "Single quote — routine", tone: "success" },
+};
+
+function ComparisonModeBadge({ mode }: { mode: string }) {
+  const { label, tone } = COMPARISON_MODE_LABEL[mode] ?? { label: mode, tone: "neutral" as const };
+  return <Chip tone={tone}>{label}</Chip>;
+}
+
+function LiveQuoteRow({
+  quote,
+  isSelected,
+  onSelect,
+  selecting,
+}: {
+  quote: ExtractedQuoteOut;
+  isSelected: boolean;
+  onSelect: () => void;
+  selecting: boolean;
+}) {
+  const declined = quote.response_type === "DECLINATION";
+  const routine = quote.subjectivities.filter((s) => s.materiality === "routine");
+  const material = quote.subjectivities.filter((s) => s.materiality === "material");
+
+  return (
+    <li
+      className={`rounded-lg border p-3 text-sm ${declined ? "border-border opacity-60" : isSelected ? "border-accent/40 bg-accent/5" : "border-border"}`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{quote.carrier_name}</span>
+          {declined && <Chip tone="danger">Declined</Chip>}
+          {isSelected && (
+            <Chip tone="success">
+              <CheckCircle2 className="h-2.5 w-2.5" /> Selected
+            </Chip>
+          )}
+        </div>
+        {!declined && quote.premium != null && (
+          <span className="font-mono text-xs">${quote.premium.toLocaleString()}</span>
+        )}
+      </div>
+
+      {declined ? (
+        <div className="mt-2 text-[12px] text-muted-foreground">
+          <b className="text-foreground">Stated reason:</b>{" "}
+          {quote.declination_reason ?? "No reason given in the decline email."}
+          {quote.declination_appetite_consistency && (
+            <div className="mt-1">
+              <b className="text-foreground">Appetite consistency (QC-03, log only):</b>{" "}
+              {quote.declination_appetite_consistency}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="mt-2 grid gap-1 text-[11px] text-muted-foreground sm:grid-cols-2">
+            {quote.limits && <span>Limits: {quote.limits}</span>}
+            {quote.deductibles?.all_perils && (
+              <span>Deductible (all perils): {quote.deductibles.all_perils}</span>
+            )}
+            {quote.deductibles?.wind_hail && (
+              <span>Deductible (wind/hail): {quote.deductibles.wind_hail}</span>
+            )}
+            {quote.effective_date && <span>Effective: {quote.effective_date}</span>}
+            {quote.quote_valid_through && <span>Valid through: {quote.quote_valid_through}</span>}
+          </div>
+          {quote.key_endorsements.length > 0 && (
+            <div className="mt-2 text-[11px] text-muted-foreground">
+              Endorsements: {quote.key_endorsements.map((e) => `${e.type} (${e.basis})`).join("; ")}
+            </div>
+          )}
+          {(routine.length > 0 || material.length > 0) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {material.map((s, i) => (
+                <Chip key={`m${i}`} tone="warn">
+                  <AlertTriangle className="h-2.5 w-2.5" />
+                  {s.description}
+                </Chip>
+              ))}
+              {routine.map((s, i) => (
+                <Chip key={`r${i}`} tone="neutral">
+                  {s.description}
+                </Chip>
+              ))}
+            </div>
+          )}
+          <div className="mt-2">
+            <Button
+              variant={isSelected ? "secondary" : "primary"}
+              className="!py-1 !text-xs"
+              disabled={selecting}
+              onClick={onSelect}
+            >
+              {selecting && <Loader2 className="h-3 w-3 animate-spin" />}
+              {isSelected ? "Selected — re-select" : "Present this quote"}
+            </Button>
+          </div>
+        </>
+      )}
+    </li>
+  );
+}
+
+function LiveComparisonCard({
+  itemId,
+  payload,
+  onActed,
+}: {
+  itemId: string;
+  payload: ComparisonPayload;
+  onActed: (who: string, what: string, ctx: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [selectingId, setSelectingId] = useState<string | null>(null);
+  const who = payload.named_insured ?? payload.submission_id ?? itemId;
+
+  const selectMutation = useMutation({
+    mutationFn: (quoteId: string) => selectQuote(itemId, quoteId),
+    onMutate: (quoteId: string) => setSelectingId(quoteId),
+    onSuccess: (item, quoteId) => {
+      onActed(
+        "You",
+        `Selected quote — POST /api/es/quote-comparison/${itemId}/select/${quoteId}. Fired a real QUOTE_TERMS_SUMMARY draft in Agent Communication (no navigation needed).`,
+        `${who} → status "${item.status}"`,
+      );
+      toast.success(
+        "Quote presented — a real draft was created in Agent Communication's Live drafts",
+      );
+      queryClient.invalidateQueries({ queryKey: ["quote-comparison"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to select quote");
+    },
+    onSettled: () => setSelectingId(null),
+  });
+
+  const logMutation = useMutation({
+    mutationFn: (action: "revise" | "lapse") =>
+      action === "revise" ? requestRevisedTerms(itemId) : markLapsed(itemId),
+    onSuccess: (item, action) => {
+      onActed(
+        "You",
+        action === "revise" ? "Requested revised terms" : "Marked no action — quote will lapse",
+        `${who} → status "${item.status}"`,
+      );
+      toast.success("Logged");
+      queryClient.invalidateQueries({ queryKey: ["quote-comparison"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Action failed");
+    },
+  });
+
+  const urgent = payload.output_mode === "SINGLE_QUOTE_URGENT";
+
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-serif text-xl">{who}</h3>
+            <ComparisonModeBadge mode={payload.output_mode} />
+            <Chip>{payload.status}</Chip>
+          </div>
+        </div>
+        <FoundationBadge kind="matching" />
+      </div>
+
+      {urgent && (
+        <div className="mt-4 flex items-start gap-2 rounded-xl border-2 border-destructive/40 bg-destructive/5 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div className="text-[12px] text-foreground">
+            <b>Urgent — single quote (FR-22):</b> this needs its own attention, not just a
+            comparison view.
+          </div>
+        </div>
+      )}
+
+      {!payload.comparability_assessment.directly_comparable && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-warn/40 bg-warn/10 p-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+          <div className="text-[12px] text-foreground">
+            <b>Not directly comparable</b> — material differences:{" "}
+            {payload.comparability_assessment.material_differences.join(", ")}. Never render this as
+            "cheaper option" alone (QC-01).
+          </div>
+        </div>
+      )}
+
+      {payload.urgency_flags.length > 0 && (
+        <div className="mt-3 space-y-1">
+          {payload.urgency_flags.map((f, i) => (
+            <div key={i} className="flex items-start gap-2 text-[12px] text-muted-foreground">
+              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warn" />
+              <span>
+                <b className="text-foreground">{f.flag_type}:</b> {f.detail}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <ul className="mt-4 space-y-2">
+        {payload.quotes.map((q) => (
+          <LiveQuoteRow
+            key={q.quote_id}
+            quote={q}
+            isSelected={payload.selected_quote_id === q.quote_id}
+            selecting={selectingId === q.quote_id}
+            onSelect={() => selectMutation.mutate(q.quote_id)}
+          />
+        ))}
+      </ul>
+
+      <div className="mt-4 rounded-lg border border-border bg-secondary/30 p-3 text-[12px]">
+        <b>Recommendation:</b> {payload.recommendation.reasoning.summary}
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+        <Button
+          variant="secondary"
+          disabled={logMutation.isPending}
+          onClick={() => logMutation.mutate("revise")}
+        >
+          Request revised terms
+        </Button>
+        <Button
+          variant="danger"
+          disabled={logMutation.isPending}
+          onClick={() => logMutation.mutate("lapse")}
+        >
+          Mark no action — will lapse
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
+function LiveComparisonsSection() {
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [log, setLog] = useState<LogEntry[]>([]);
+
+  const listQuery = useQuery({
+    queryKey: ["quote-comparison", "list"],
+    queryFn: listQuoteComparison,
+  });
+  const items = listQuery.data ?? [];
+
+  const detailQuery = useQuery({
+    queryKey: ["quote-comparison", "detail", selectedId],
+    queryFn: () => getQuoteComparison(selectedId!),
+    enabled: Boolean(selectedId),
+    refetchOnWindowFocus: true, // urgency is recomputed against today on every GET — re-fetching matters
+  });
+
+  function appendLog(who: string, what: string, ctx: string) {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf: "—",
+      },
+      ...prev,
+    ]);
+  }
+
+  const runMutation = useMutation({
+    mutationFn: (s: FixtureScenario) => runQuoteComparison(s.ref),
+    onSuccess: (item, s) => {
+      queryClient.invalidateQueries({ queryKey: ["quote-comparison"] });
+      toast.success(`${s.label}: comparison generated`);
+      setSelectedId(item.id);
+    },
+    onError: (err: unknown, s) => {
+      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`);
+    },
+  });
+
+  return (
+    <div className="mt-6 space-y-5">
+      <Panel
+        title="Live comparisons — wired to Backend-AI-OS"
+        subtitle="/api/es/quote-comparison — real Workflow_13 fixture scenarios (the table above stays mocked, including the hand-off to Agent Copilot)"
+      >
+        <div className="flex flex-wrap gap-2">
+          {QUOTE_FIXTURE_SCENARIOS.map((s) => (
+            <Button
+              key={s.ref}
+              variant="secondary"
+              disabled={runMutation.isPending}
+              onClick={() => runMutation.mutate(s)}
+            >
+              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {s.label}
+            </Button>
+          ))}
+        </div>
+      </Panel>
+
+      {listQuery.isLoading && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading comparisons…
+        </div>
+      )}
+      {listQuery.isError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          {listQuery.error instanceof Error
+            ? listQuery.error.message
+            : "Failed to load comparisons."}
+        </div>
+      )}
+
+      {!listQuery.isLoading && !listQuery.isError && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel title="Comparisons" subtitle={`${items.length} generated`}>
+            {items.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No comparisons yet — run a scenario above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
+                      selectedId === row.id ? "bg-secondary/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate font-mono text-sm">
+                        {row.submission_id ?? row.id}
+                      </span>
+                      <div className="mt-1.5">
+                        <Chip>{row.status}</Chip>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <div className="space-y-5">
+            {!selectedId ? (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Select a comparison from the list.
+                </div>
+              </Panel>
+            ) : detailQuery.isLoading ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading comparison…
+                </div>
+              </Panel>
+            ) : detailQuery.isError ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {detailQuery.error instanceof Error
+                    ? detailQuery.error.message
+                    : "Failed to load comparison."}
+                </div>
+              </Panel>
+            ) : detailQuery.data?.payload ? (
+              <LiveComparisonCard
+                itemId={detailQuery.data.id}
+                payload={detailQuery.data.payload}
+                onActed={appendLog}
+              />
+            ) : (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No comparison data for this item.
+                </div>
+              </Panel>
+            )}
+
+            <Panel
+              title="Activity (live section)"
+              subtitle="This session's real actions"
+              actions={<FoundationBadge kind="matching" />}
+            >
+              <ul className="divide-y divide-border">
+                {log.length === 0 ? (
+                  <li className="py-6 text-center text-sm text-muted-foreground">
+                    No activity yet this session.
+                  </li>
+                ) : (
+                  log.slice(0, 10).map((d, i) => (
+                    <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                      <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                        {d.at}
+                      </span>
+                      <div className="flex-1">
+                        <div>
+                          <b>{d.who}</b> — {d.what}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                      </div>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </Panel>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3731,6 +4187,438 @@ export function BinderIssuance() {
           </Panel>
         </div>
       </div>
+
+      <LiveBindersSection />
+    </div>
+  );
+}
+
+function LiveDiscrepancyBlock({
+  title,
+  discrepancy,
+  resolving,
+  onResolve,
+  acceptLabel,
+}: {
+  title: string;
+  discrepancy: DiscrepancyOut;
+  resolving: boolean;
+  onResolve: (resolution: string) => void;
+  acceptLabel: string;
+}) {
+  return (
+    <div className="rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
+      <div className="flex items-center gap-2 font-medium">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+        {title} — {discrepancy.field} mismatch
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-3 rounded-md border border-border bg-background p-2 text-xs">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Requested/bound
+          </div>
+          <div className="font-mono">{discrepancy.requested_or_bound}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Confirmed/issued
+          </div>
+          <div className="font-mono">{discrepancy.confirmed_or_issued}</div>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          variant="secondary"
+          className="!py-1 !text-xs"
+          disabled={resolving}
+          onClick={() =>
+            onResolve(
+              acceptLabel === "accept_carrier_version"
+                ? "accept_carrier_version"
+                : "accept_issued_version",
+            )
+          }
+        >
+          {resolving && <Loader2 className="h-3 w-3 animate-spin" />}
+          {acceptLabel === "accept_carrier_version"
+            ? "Accept carrier's version"
+            : "Accept issued version"}
+        </Button>
+        <Button
+          variant="danger"
+          className="!py-1 !text-xs"
+          disabled={resolving}
+          onClick={() => onResolve("flag_carrier_error")}
+        >
+          Flag as carrier error
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function LiveBinderCard({
+  itemId,
+  payload,
+  onActed,
+}: {
+  itemId: string;
+  payload: BindCoordinationPayload;
+  onActed: (who: string, what: string, ctx: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [resolvingSection, setResolvingSection] = useState<"confirmation" | "policy" | null>(null);
+  const who = payload.named_insured ?? payload.submission_id ?? itemId;
+  const unresolvedMaterial = payload.pre_bind_subjectivities.filter(
+    (s) => s.status === "open" && s.materiality === "material",
+  );
+
+  const confirmationMutation = useMutation({
+    mutationFn: (resolution: DiscrepancyResolution) =>
+      resolveConfirmationDiscrepancy(itemId, resolution),
+    onMutate: () => setResolvingSection("confirmation"),
+    onSuccess: (item, resolution) => {
+      onActed(
+        "You",
+        `Resolved bind-confirmation discrepancy — ${resolution}`,
+        `${who} → status "${item.status}"`,
+      );
+      toast.success("Resolved — Placement Confirmation released if this was the only blocker");
+      queryClient.invalidateQueries({ queryKey: ["binder-issuance"] });
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Resolution failed"),
+    onSettled: () => setResolvingSection(null),
+  });
+
+  const policyMutation = useMutation({
+    mutationFn: (resolution: PolicyDiscrepancyResolution) =>
+      resolvePolicyDiscrepancy(itemId, resolution),
+    onMutate: () => setResolvingSection("policy"),
+    onSuccess: (item, resolution) => {
+      onActed(
+        "You",
+        `Resolved issued-policy discrepancy — ${resolution}`,
+        `${who} → status "${item.status}"`,
+      );
+      toast.success("Resolved — Policy Documents Delivered released if this was the only blocker");
+      queryClient.invalidateQueries({ queryKey: ["binder-issuance"] });
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Resolution failed"),
+    onSettled: () => setResolvingSection(null),
+  });
+
+  const escalateMutation = useMutation({
+    mutationFn: () => escalateBinderIssuance(itemId),
+    onSuccess: (item) => {
+      onActed("You", "Escalated to principal", `${who} → status "${item.status}"`);
+      toast.success("Escalated");
+      queryClient.invalidateQueries({ queryKey: ["binder-issuance"] });
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Escalate failed"),
+  });
+
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-serif text-xl">{who}</h3>
+            <Chip
+              tone={
+                payload.bind_order_status === "BLOCKED"
+                  ? "danger"
+                  : payload.bind_order_status === "SENT"
+                    ? "success"
+                    : "neutral"
+              }
+            >
+              {payload.bind_order_status}
+            </Chip>
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">{payload.carrier_name}</div>
+        </div>
+        <FoundationBadge kind="matching" />
+      </div>
+
+      {unresolvedMaterial.length > 0 && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div className="text-[12px] text-foreground">
+            <b>Blocked — unresolved material subjectivity:</b>{" "}
+            {unresolvedMaterial.map((s) => s.description).join("; ")}
+          </div>
+        </div>
+      )}
+
+      {payload.carrier_confirmation.reconciliation_status === "DISCREPANCY_FLAGGED" &&
+        payload.carrier_confirmation.discrepancy_detail.map((d, i) => (
+          <div key={i} className="mt-4">
+            <LiveDiscrepancyBlock
+              title="Bind confirmation vs requested terms"
+              discrepancy={d}
+              resolving={resolvingSection === "confirmation"}
+              acceptLabel="accept_carrier_version"
+              onResolve={(r) => confirmationMutation.mutate(r as DiscrepancyResolution)}
+            />
+          </div>
+        ))}
+
+      {payload.issued_policy_reconciliation.status === "POLICY_DISCREPANCY_FLAGGED" &&
+        payload.issued_policy_reconciliation.discrepancy_detail.map((d, i) => (
+          <div key={i} className="mt-4">
+            <LiveDiscrepancyBlock
+              title="Issued policy vs confirmed bind terms"
+              discrepancy={d}
+              resolving={resolvingSection === "policy"}
+              acceptLabel="accept_issued_version"
+              onResolve={(r) => policyMutation.mutate(r as PolicyDiscrepancyResolution)}
+            />
+          </div>
+        ))}
+
+      {payload.policy_issuance.overdue_alert_fired && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-warn/40 bg-warn/10 p-3">
+          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+          <div className="text-[12px] text-foreground">
+            <b>Policy issuance overdue</b> — expected by {payload.policy_issuance.expected_by_date},
+            not yet received.
+          </div>
+        </div>
+      )}
+
+      {payload.post_bind_ongoing_obligations.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-2 text-xs font-medium">Post-bind ongoing obligations</div>
+          <ul className="space-y-2">
+            {payload.post_bind_ongoing_obligations.map((o, i) => (
+              <li
+                key={i}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 text-sm"
+              >
+                <div>
+                  <div>{o.description}</div>
+                  {o.due_date && (
+                    <div className="text-[11px] text-muted-foreground">Due {o.due_date}</div>
+                  )}
+                </div>
+                <Chip
+                  tone={o.status === "completed" ? "success" : o.reminder_due ? "warn" : "neutral"}
+                >
+                  {o.status === "completed"
+                    ? "Completed"
+                    : o.reminder_due
+                      ? "Reminder due"
+                      : "Open"}
+                </Chip>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-2 text-[11px] text-muted-foreground sm:grid-cols-2">
+        <span>
+          Placement Confirmation fired:{" "}
+          {payload.downstream_triggers_fired.placement_confirmation ? "yes" : "no"}
+        </span>
+        <span>
+          Policy Documents Delivered fired:{" "}
+          {payload.downstream_triggers_fired.policy_documents_delivered ? "yes" : "no"}
+        </span>
+      </div>
+
+      <div className="mt-5 flex items-center gap-2 border-t border-border pt-3">
+        <Button
+          variant="secondary"
+          disabled={escalateMutation.isPending}
+          onClick={() => escalateMutation.mutate()}
+        >
+          {escalateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Escalate to principal
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
+function LiveBindersSection() {
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [log, setLog] = useState<LogEntry[]>([]);
+
+  const listQuery = useQuery({
+    queryKey: ["binder-issuance", "list"],
+    queryFn: listBinderIssuance,
+  });
+  const items = listQuery.data ?? [];
+
+  const detailQuery = useQuery({
+    queryKey: ["binder-issuance", "detail", selectedId],
+    queryFn: () => getBinderIssuance(selectedId!),
+    enabled: Boolean(selectedId),
+    refetchOnWindowFocus: true,
+  });
+
+  function appendLog(who: string, what: string, ctx: string) {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf: "—",
+      },
+      ...prev,
+    ]);
+  }
+
+  const runMutation = useMutation({
+    mutationFn: (s: BinderFixtureScenario) => runBinderIssuance(s.ref),
+    onSuccess: (item, s) => {
+      queryClient.invalidateQueries({ queryKey: ["binder-issuance"] });
+      toast.success(`${s.label}: coordination generated`);
+      setSelectedId(item.id);
+    },
+    onError: (err: unknown, s) =>
+      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
+  });
+
+  return (
+    <div className="mt-6 space-y-5">
+      <Panel
+        title="Live binders — wired to Backend-AI-OS"
+        subtitle="/api/es/binder-issuance — real Workflow_14 fixture scenarios (the panels above stay mocked, including the hand-offs to Agent Copilot)"
+      >
+        <div className="flex flex-wrap gap-2">
+          {BINDER_FIXTURE_SCENARIOS.map((s) => (
+            <Button
+              key={s.ref}
+              variant="secondary"
+              disabled={runMutation.isPending}
+              onClick={() => runMutation.mutate(s)}
+            >
+              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {s.label}
+            </Button>
+          ))}
+        </div>
+      </Panel>
+
+      {listQuery.isLoading && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading binders…
+        </div>
+      )}
+      {listQuery.isError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load binders."}
+        </div>
+      )}
+
+      {!listQuery.isLoading && !listQuery.isError && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel title="Binders" subtitle={`${items.length} generated`}>
+            {items.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No binders yet — run a scenario above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
+                      selectedId === row.id ? "bg-secondary/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate font-mono text-sm">
+                        {row.submission_id ?? row.id}
+                      </span>
+                      <div className="mt-1.5">
+                        <Chip>{row.status}</Chip>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <div className="space-y-5">
+            {!selectedId ? (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Select a binder from the list.
+                </div>
+              </Panel>
+            ) : detailQuery.isLoading ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading binder…
+                </div>
+              </Panel>
+            ) : detailQuery.isError ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {detailQuery.error instanceof Error
+                    ? detailQuery.error.message
+                    : "Failed to load binder."}
+                </div>
+              </Panel>
+            ) : detailQuery.data?.payload ? (
+              <LiveBinderCard
+                itemId={detailQuery.data.id}
+                payload={detailQuery.data.payload}
+                onActed={appendLog}
+              />
+            ) : (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No binder data for this item.
+                </div>
+              </Panel>
+            )}
+
+            <Panel
+              title="Activity (live section)"
+              subtitle="This session's real actions"
+              actions={<FoundationBadge kind="matching" />}
+            >
+              <ul className="divide-y divide-border">
+                {log.length === 0 ? (
+                  <li className="py-6 text-center text-sm text-muted-foreground">
+                    No activity yet this session.
+                  </li>
+                ) : (
+                  log.slice(0, 10).map((d, i) => (
+                    <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                      <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                        {d.at}
+                      </span>
+                      <div className="flex-1">
+                        <div>
+                          <b>{d.who}</b> — {d.what}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                      </div>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </Panel>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

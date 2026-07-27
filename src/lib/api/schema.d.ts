@@ -543,6 +543,249 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/es/quote-comparison/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Quote Comparison
+         * @description Runs the comparison/recommendation pipeline for one scenario/
+         *     submission's carrier responses. Never fires Agent Communication itself —
+         *     see module docstring.
+         */
+        post: operations["run_quote_comparison_api_es_quote_comparison_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/quote-comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Quote Comparison */
+        get: operations["list_quote_comparison_api_es_quote_comparison_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/quote-comparison/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Quote Comparison
+         * @description QC-07/FR-14: recomputes urgency against TODAY on every read — a quote
+         *     that looked fine at ingestion needs to re-check as its validity window
+         *     approaches (see comparison_engine.recompute_urgency_from_payload's
+         *     docstring for why this is a read-time overlay, not a scheduled job).
+         */
+        get: operations["get_quote_comparison_api_es_quote_comparison__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/quote-comparison/{item_id}/select/{quote_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select Quote
+         * @description FR-23: the broker marks which quote to present to the retail agent —
+         *     for MULTI_OPTION this is which of the options; for SINGLE_RECOMMENDATION/
+         *     SINGLE_QUOTE_* it confirms the (only) recommended one. This is what
+         *     fires FR-20's downstream Agent Communication handoff (never ``/run``
+         *     itself — see module docstring).
+         */
+        post: operations["select_quote_api_es_quote_comparison__item_id__select__quote_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/quote-comparison/{item_id}/request-revised-terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Revised Terms */
+        post: operations["request_revised_terms_api_es_quote_comparison__item_id__request_revised_terms_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/quote-comparison/{item_id}/mark-lapsed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Lapsed */
+        post: operations["mark_lapsed_api_es_quote_comparison__item_id__mark_lapsed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/binder-issuance/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Binder Issuance */
+        post: operations["run_binder_issuance_api_es_binder_issuance_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/binder-issuance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Binder Issuance */
+        get: operations["list_binder_issuance_api_es_binder_issuance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/binder-issuance/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Binder Issuance
+         * @description BI-04/BI-07: recomputes overdue/reminder status against TODAY on
+         *     every read — same read-time-projection pattern as Quote Comparison's
+         *     QC-07 (no scheduled job yet, per the approved plan).
+         */
+        get: operations["get_binder_issuance_api_es_binder_issuance__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/binder-issuance/{item_id}/resolve-confirmation-discrepancy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Confirmation Discrepancy
+         * @description FR-8/FR-23: broker explicitly resolves a BI-03 discrepancy (Accept
+         *     carrier's version / Flag as carrier error) — required before Placement
+         *     Confirmation can fire (BI-06). Workflow-owned: ``ReviewAction`` has no
+         *     matching frozen value, same pattern as Agent Communication's
+         *     compliance-clear and Quote Comparison's select/request-revised-terms.
+         */
+        post: operations["resolve_confirmation_discrepancy_api_es_binder_issuance__item_id__resolve_confirmation_discrepancy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/binder-issuance/{item_id}/resolve-policy-discrepancy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Policy Discrepancy
+         * @description FR-14/FR-23: broker explicitly resolves a BI-05 discrepancy — required
+         *     before Policy Documents Delivered can fire (BI-06).
+         */
+        post: operations["resolve_policy_discrepancy_api_es_binder_issuance__item_id__resolve_policy_discrepancy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/binder-issuance/{item_id}/escalate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Escalate
+         * @description FR-23's third resolution path — reuses the existing frozen
+         *     ``ReviewAction.ESCALATE`` (anyone may escalate), unlike the other two
+         *     resolution actions which don't map onto any existing action.
+         */
+        post: operations["escalate_api_es_binder_issuance__item_id__escalate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -580,12 +823,104 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** BindCoordinationPayload */
+        BindCoordinationPayload: {
+            /** Bind Id */
+            bind_id: string;
+            /** Submission Id */
+            submission_id?: string | null;
+            /** Named Insured */
+            named_insured?: string | null;
+            /** Carrier Id */
+            carrier_id?: string | null;
+            /** Carrier Name */
+            carrier_name: string;
+            requested_bind_terms: components["schemas"]["BindTermsOut"];
+            /**
+             * Pre Bind Subjectivities
+             * @default []
+             */
+            pre_bind_subjectivities: components["schemas"]["verticals__es__workflows__binder_issuance__schema__SubjectivityOut"][];
+            /**
+             * Bind Order Status
+             * @default READY
+             */
+            bind_order_status: string;
+            /**
+             * @default {
+             *       "reconciliation_status": "PENDING",
+             *       "discrepancy_detail": []
+             *     }
+             */
+            carrier_confirmation: components["schemas"]["CarrierConfirmationOut"];
+            /**
+             * @default {
+             *       "timeline_is_assumed_default": false,
+             *       "documents_received": false,
+             *       "overdue_alert_fired": false
+             *     }
+             */
+            policy_issuance: components["schemas"]["PolicyIssuanceOut"];
+            /**
+             * @default {
+             *       "status": "NOT_YET_RECEIVED",
+             *       "discrepancy_detail": []
+             *     }
+             */
+            issued_policy_reconciliation: components["schemas"]["IssuedPolicyReconciliationOut"];
+            /**
+             * Post Bind Ongoing Obligations
+             * @default []
+             */
+            post_bind_ongoing_obligations: components["schemas"]["OngoingObligationOut"][];
+            /**
+             * @default {
+             *       "placement_confirmation": false,
+             *       "policy_documents_delivered": false
+             *     }
+             */
+            downstream_triggers_fired: components["schemas"]["DownstreamTriggersFiredOut"];
+            /**
+             * Status Log
+             * @default []
+             */
+            status_log: components["schemas"]["StatusLogEntryOut"][];
+        };
+        /** BindTermsOut */
+        BindTermsOut: {
+            /** Premium */
+            premium?: number | null;
+            /** Limits */
+            limits?: string | null;
+            /** Deductible All Perils */
+            deductible_all_perils?: number | null;
+            /** Deductible Wind Hail */
+            deductible_wind_hail?: number | null;
+            /** Effective Date */
+            effective_date?: string | null;
+        };
         /** BlockingItemOut */
         BlockingItemOut: {
             /** Item */
             item: string;
             /** Reason */
             reason: string;
+        };
+        /** CarrierConfirmationOut */
+        CarrierConfirmationOut: {
+            /** Binder Number */
+            binder_number?: string | null;
+            confirmed_terms?: components["schemas"]["BindTermsOut"] | null;
+            /**
+             * Reconciliation Status
+             * @default PENDING
+             */
+            reconciliation_status: string;
+            /**
+             * Discrepancy Detail
+             * @default []
+             */
+            discrepancy_detail: components["schemas"]["DiscrepancyOut"][];
         };
         /** CarrierMatchOut */
         CarrierMatchOut: {
@@ -605,6 +940,60 @@ export interface components {
              * @default []
              */
             flags: string[];
+        };
+        /** ComparabilityAssessmentOut */
+        ComparabilityAssessmentOut: {
+            /** Directly Comparable */
+            directly_comparable: boolean;
+            /**
+             * Material Differences
+             * @default []
+             */
+            material_differences: string[];
+        };
+        /**
+         * ComparisonPayload
+         * @description The FE Quote Comparison screen's data needs for one submission's
+         *     carrier response set.
+         */
+        ComparisonPayload: {
+            /** Submission Id */
+            submission_id?: string | null;
+            /** Named Insured */
+            named_insured?: string | null;
+            /**
+             * Quotes Considered
+             * @default []
+             */
+            quotes_considered: string[];
+            /**
+             * Quotes
+             * @default []
+             */
+            quotes: components["schemas"]["ExtractedQuoteOut"][];
+            comparability_assessment: components["schemas"]["ComparabilityAssessmentOut"];
+            /** Output Mode */
+            output_mode: string;
+            recommendation: components["schemas"]["RecommendationOut"];
+            /**
+             * Urgency Flags
+             * @default []
+             */
+            urgency_flags: components["schemas"]["UrgencyFlagOut"][];
+            /** Selected Quote Id */
+            selected_quote_id?: string | null;
+            /**
+             * Status
+             * @default PENDING_REVIEW
+             */
+            status: string;
+            /**
+             * Processing Metadata
+             * @default {}
+             */
+            processing_metadata: {
+                [key: string]: string;
+            };
         };
         /** ConsistencyCheck */
         ConsistencyCheck: {
@@ -632,6 +1021,13 @@ export interface components {
              */
             citations: components["schemas"]["CoverLetterCitationOut"][];
         };
+        /** DeductiblesOut */
+        DeductiblesOut: {
+            /** All Perils */
+            all_perils?: string | null;
+            /** Wind Hail */
+            wind_hail?: string | null;
+        };
         /** DiligentSearchOut */
         DiligentSearchOut: {
             /** Required */
@@ -642,6 +1038,15 @@ export interface components {
             compliant: boolean;
             /** Note */
             note: string;
+        };
+        /** DiscrepancyOut */
+        DiscrepancyOut: {
+            /** Field */
+            field: string;
+            /** Requested Or Bound */
+            requested_or_bound: string;
+            /** Confirmed Or Issued */
+            confirmed_or_issued: string;
         };
         /** DocChecklistItemOut */
         DocChecklistItemOut: {
@@ -660,6 +1065,19 @@ export interface components {
             kind: string;
             /** Content */
             content: string;
+        };
+        /** DownstreamTriggersFiredOut */
+        DownstreamTriggersFiredOut: {
+            /**
+             * Placement Confirmation
+             * @default false
+             */
+            placement_confirmation: boolean;
+            /**
+             * Policy Documents Delivered
+             * @default false
+             */
+            policy_documents_delivered: boolean;
         };
         /**
          * DraftCommunicationOut
@@ -715,6 +1133,13 @@ export interface components {
             /** Sent Timestamp */
             sent_timestamp?: string | null;
         };
+        /** EndorsementOut */
+        EndorsementOut: {
+            /** Type */
+            type: string;
+            /** Basis */
+            basis: string;
+        };
         /** ExcludedCarrierOut */
         ExcludedCarrierOut: {
             /** Carrier Id */
@@ -740,6 +1165,44 @@ export interface components {
             confidence: number;
             /** Source */
             source?: string | null;
+        };
+        /** ExtractedQuoteOut */
+        ExtractedQuoteOut: {
+            /** Quote Id */
+            quote_id: string;
+            /** Submission Id */
+            submission_id?: string | null;
+            /** Carrier Id */
+            carrier_id?: string | null;
+            /** Carrier Name */
+            carrier_name: string;
+            /** Response Type */
+            response_type: string;
+            /** Premium */
+            premium?: number | null;
+            /** Limits */
+            limits?: string | null;
+            deductibles?: components["schemas"]["DeductiblesOut"] | null;
+            /**
+             * Key Endorsements
+             * @default []
+             */
+            key_endorsements: components["schemas"]["EndorsementOut"][];
+            /**
+             * Subjectivities
+             * @default []
+             */
+            subjectivities: components["schemas"]["verticals__es__workflows__quote_comparison__schema__SubjectivityOut"][];
+            /** Effective Date */
+            effective_date?: string | null;
+            /** Quote Valid Through */
+            quote_valid_through?: string | null;
+            /** Declination Reason */
+            declination_reason?: string | null;
+            /** Declination Appetite Consistency */
+            declination_appetite_consistency?: string | null;
+            /** Source Email Reference */
+            source_email_reference: string;
         };
         /** GapItemOut */
         GapItemOut: {
@@ -768,6 +1231,19 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** IssuedPolicyReconciliationOut */
+        IssuedPolicyReconciliationOut: {
+            /**
+             * Status
+             * @default NOT_YET_RECEIVED
+             */
+            status: string;
+            /**
+             * Discrepancy Detail
+             * @default []
+             */
+            discrepancy_detail: components["schemas"]["DiscrepancyOut"][];
         };
         /** LossMetrics */
         LossMetrics: {
@@ -812,6 +1288,23 @@ export interface components {
             reason: string;
             /** Severity */
             severity: string;
+        };
+        /** OngoingObligationOut */
+        OngoingObligationOut: {
+            /** Description */
+            description: string;
+            /** Due Date */
+            due_date?: string | null;
+            /**
+             * Status
+             * @default open
+             */
+            status: string;
+            /**
+             * Reminder Due
+             * @default false
+             */
+            reminder_due: boolean;
         };
         /**
          * PackageAssemblyPayload
@@ -860,6 +1353,56 @@ export interface components {
              * @default []
              */
             status_log: components["schemas"]["StatusLogEntryOut"][];
+        };
+        /** PolicyIssuanceOut */
+        PolicyIssuanceOut: {
+            /** Carrier Stated Timeline Days */
+            carrier_stated_timeline_days?: number | null;
+            /**
+             * Timeline Is Assumed Default
+             * @default false
+             */
+            timeline_is_assumed_default: boolean;
+            /** Expected By Date */
+            expected_by_date?: string | null;
+            /**
+             * Documents Received
+             * @default false
+             */
+            documents_received: boolean;
+            /**
+             * Overdue Alert Fired
+             * @default false
+             */
+            overdue_alert_fired: boolean;
+        };
+        /** RecommendationCitationOut */
+        RecommendationCitationOut: {
+            /** Claim */
+            claim: string;
+            /** Source */
+            source: string;
+        };
+        /** RecommendationOut */
+        RecommendationOut: {
+            /** Primary Quote Id */
+            primary_quote_id?: string | null;
+            reasoning: components["schemas"]["RecommendationReasoningOut"];
+        };
+        /** RecommendationReasoningOut */
+        RecommendationReasoningOut: {
+            /** Summary */
+            summary: string;
+            /**
+             * Citations
+             * @default []
+             */
+            citations: components["schemas"]["RecommendationCitationOut"][];
+        };
+        /** ResolveDiscrepancyRequest */
+        ResolveDiscrepancyRequest: {
+            /** Resolution */
+            resolution: string;
         };
         /** RiskFactor */
         RiskFactor: {
@@ -980,6 +1523,15 @@ export interface components {
             /** Timestamp */
             timestamp: string;
         };
+        /** UrgencyFlagOut */
+        UrgencyFlagOut: {
+            /** Quote Id */
+            quote_id: string;
+            /** Flag Type */
+            flag_type: string;
+            /** Detail */
+            detail: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1016,6 +1568,34 @@ export interface components {
             };
         };
         /** ReviewItemOut */
+        verticals__es__workflows__binder_issuance__router__ReviewItemOut: {
+            /** Id */
+            id: string;
+            /** Submission Id */
+            submission_id: string | null;
+            /** Status */
+            status: string;
+            payload?: components["schemas"]["BindCoordinationPayload"] | null;
+        };
+        /** RunRequest */
+        verticals__es__workflows__binder_issuance__router__RunRequest: {
+            /** Scenario Ref */
+            scenario_ref: string;
+            /** As Of */
+            as_of?: string | null;
+        };
+        /** SubjectivityOut */
+        verticals__es__workflows__binder_issuance__schema__SubjectivityOut: {
+            /** Description */
+            description: string;
+            /** Materiality */
+            materiality: string;
+            /** Lifecycle Stage */
+            lifecycle_stage: string;
+            /** Status */
+            status: string;
+        };
+        /** ReviewItemOut */
         verticals__es__workflows__market_matching__router__ReviewItemOut: {
             /** Id */
             id: string;
@@ -1048,6 +1628,37 @@ export interface components {
             scenario_ref: string;
             /** Carrier Id */
             carrier_id?: string | null;
+        };
+        /** ReviewItemOut */
+        verticals__es__workflows__quote_comparison__router__ReviewItemOut: {
+            /** Id */
+            id: string;
+            /** Submission Id */
+            submission_id: string | null;
+            /** Status */
+            status: string;
+            payload?: components["schemas"]["ComparisonPayload"] | null;
+        };
+        /** RunRequest */
+        verticals__es__workflows__quote_comparison__router__RunRequest: {
+            /** Scenario Ref */
+            scenario_ref: string;
+            /** As Of */
+            as_of?: string | null;
+        };
+        /** SubjectivityOut */
+        verticals__es__workflows__quote_comparison__schema__SubjectivityOut: {
+            /** Description */
+            description: string;
+            /** Materiality */
+            materiality: string;
+            /** Deadline Or Dependency */
+            deadline_or_dependency?: string | null;
+            /**
+             * Is Dependency
+             * @default false
+             */
+            is_dependency: boolean;
         };
     };
     responses: never;
@@ -2043,6 +2654,447 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_quote_comparison_api_es_quote_comparison_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["verticals__es__workflows__quote_comparison__router__RunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__quote_comparison__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_quote_comparison_api_es_quote_comparison_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__quote_comparison__router__ReviewItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_quote_comparison_api_es_quote_comparison__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__quote_comparison__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_quote_api_es_quote_comparison__item_id__select__quote_id__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+                quote_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__quote_comparison__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_revised_terms_api_es_quote_comparison__item_id__request_revised_terms_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__quote_comparison__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_lapsed_api_es_quote_comparison__item_id__mark_lapsed_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__quote_comparison__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_binder_issuance_api_es_binder_issuance_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["verticals__es__workflows__binder_issuance__router__RunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__binder_issuance__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_binder_issuance_api_es_binder_issuance_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__binder_issuance__router__ReviewItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_binder_issuance_api_es_binder_issuance__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__binder_issuance__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_confirmation_discrepancy_api_es_binder_issuance__item_id__resolve_confirmation_discrepancy_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveDiscrepancyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__binder_issuance__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_policy_discrepancy_api_es_binder_issuance__item_id__resolve_policy_discrepancy_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveDiscrepancyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__binder_issuance__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    escalate_api_es_binder_issuance__item_id__escalate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__binder_issuance__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
