@@ -97,6 +97,17 @@ import {
   type StateDeterminationOut,
 } from "@/lib/api/diligentSearch";
 import {
+  FIXTURE_SCENARIOS as APPETITE_FIXTURE_SCENARIOS,
+  approveCarrierAppetiteIntelligence,
+  dismissCarrierAppetiteIntelligence,
+  getCarrierAppetiteIntelligence,
+  listCarrierAppetiteIntelligence,
+  runCarrierAppetiteIntelligence,
+  type CarrierAppetiteEvaluationPayload,
+  type EvidenceItemOut,
+  type FixtureScenario as AppetiteFixtureScenario,
+} from "@/lib/api/carrierAppetiteIntelligence";
+import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
@@ -7373,6 +7384,336 @@ export function CarrierAppetiteIntelligence() {
           </ul>
         </Panel>
       </div>
+
+      <LiveSignalsSection />
+    </div>
+  );
+}
+
+const APPETITE_PATTERN_TONE: Record<string, "success" | "warn" | "danger"> = {
+  CONFIRMED_CONSISTENT: "success",
+  GENUINE_INCONSISTENCY: "warn",
+  INSUFFICIENT_SIGNAL: "danger",
+};
+
+const APPETITE_STATUS_TONE: Record<string, "success" | "warn" | "danger" | "neutral"> = {
+  SUPPRESSED: "neutral",
+  METADATA_AUTO_UPDATED: "success",
+  PENDING_REVIEW: "warn",
+  APPROVED: "success",
+  DISMISSED: "danger",
+};
+
+function LiveEvidenceRow({ e }: { e: EvidenceItemOut }) {
+  return (
+    <li className="flex items-center gap-2 text-[11px] text-muted-foreground">
+      <span className="font-mono">{e.submission_id}</span>
+      <span>{e.outcome}</span>
+      {e.date && <span>· {e.date}</span>}
+      {e.stated_reason && <span>— "{e.stated_reason}"</span>}
+      {e.reason_scope && (
+        <Chip tone={e.reason_scope === "class_level" ? "warn" : "neutral"}>
+          {e.reason_scope.replace(/_/g, " ")}
+        </Chip>
+      )}
+    </li>
+  );
+}
+
+function LiveSignalCard({
+  itemId,
+  payload,
+  onActed,
+}: {
+  itemId: string;
+  payload: CarrierAppetiteEvaluationPayload;
+  onActed: (who: string, what: string, ctx: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [pendingAction, setPendingAction] = useState<"approve" | "dismiss" | null>(null);
+  const who = `${payload.carrier_name || payload.carrier_id} · ${payload.class_code}`;
+
+  const approveMutation = useMutation({
+    mutationFn: () => approveCarrierAppetiteIntelligence(itemId),
+    onMutate: () => setPendingAction("approve"),
+    onSuccess: (item) => {
+      onActed(
+        "You",
+        "Approved appetite-shift suggestion (records approval only — no profile changed)",
+        `${who} → status "${item.status}"`,
+      );
+      toast.success("Approved — a human still applies this manually to any real profile");
+      queryClient.invalidateQueries({ queryKey: ["carrier-appetite-intelligence"] });
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Approve failed"),
+    onSettled: () => setPendingAction(null),
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: () => dismissCarrierAppetiteIntelligence(itemId),
+    onMutate: () => setPendingAction("dismiss"),
+    onSuccess: (item) => {
+      onActed("You", "Dismissed appetite-shift suggestion", `${who} → status "${item.status}"`);
+      toast.success("Dismissed");
+      queryClient.invalidateQueries({ queryKey: ["carrier-appetite-intelligence"] });
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Dismiss failed"),
+    onSettled: () => setPendingAction(null),
+  });
+
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-serif text-xl">{who}</h3>
+            <Chip tone={APPETITE_PATTERN_TONE[payload.pattern_type] ?? "warn"}>
+              {payload.pattern_type.replace(/_/g, " ")}
+            </Chip>
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            <Chip tone={APPETITE_STATUS_TONE[payload.status] ?? "neutral"}>{payload.status}</Chip>
+          </div>
+        </div>
+        <FoundationBadge kind="matching" />
+      </div>
+
+      {payload.suggested_action && (
+        <div className="mt-4 rounded-lg border-2 border-warn/40 bg-warn/5 p-3 text-[12px] text-foreground">
+          <b>Suggested action (human-reviewed only):</b> {payload.suggested_action}
+        </div>
+      )}
+
+      {payload.metadata_refresh && (
+        <div className="mt-4 rounded-lg border border-success/30 bg-success/5 p-3 text-[12px]">
+          <b>Metadata auto-refresh (only these two fields, ever):</b>
+          <div className="mt-1 text-muted-foreground">
+            appetite_confidence: {payload.metadata_refresh.appetite_confidence} · last updated:{" "}
+            {payload.metadata_refresh.appetite_last_updated}
+          </div>
+        </div>
+      )}
+
+      {payload.evidence.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-2 text-xs font-medium">Evidence (every claim traces here)</div>
+          <ul className="space-y-1 rounded-lg border border-border p-3">
+            {payload.evidence.map((e, i) => (
+              <LiveEvidenceRow key={i} e={e} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {payload.pattern_type === "GENUINE_INCONSISTENCY" && payload.status === "PENDING_REVIEW" && (
+        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          <Button
+            variant="primary"
+            disabled={pendingAction === "approve"}
+            onClick={() => approveMutation.mutate()}
+          >
+            {pendingAction === "approve" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Approve
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={pendingAction === "dismiss"}
+            onClick={() => dismissMutation.mutate()}
+          >
+            {pendingAction === "dismiss" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Dismiss
+          </Button>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function LiveSignalsSection() {
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [log, setLog] = useState<LogEntry[]>([]);
+
+  const listQuery = useQuery({
+    queryKey: ["carrier-appetite-intelligence", "list"],
+    queryFn: listCarrierAppetiteIntelligence,
+  });
+  const items = listQuery.data ?? [];
+  const suppressedCount = items.filter((i) => i.payload?.status === "SUPPRESSED").length;
+
+  const detailQuery = useQuery({
+    queryKey: ["carrier-appetite-intelligence", "detail", selectedId],
+    queryFn: () => getCarrierAppetiteIntelligence(selectedId!),
+    enabled: Boolean(selectedId),
+  });
+
+  function appendLog(who: string, what: string, ctx: string) {
+    setLog((prev) => [
+      {
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        who,
+        what,
+        ctx,
+        conf: "—",
+      },
+      ...prev,
+    ]);
+  }
+
+  const runMutation = useMutation({
+    mutationFn: (s: AppetiteFixtureScenario) => runCarrierAppetiteIntelligence(s.ref),
+    onSuccess: (item, s) => {
+      queryClient.invalidateQueries({ queryKey: ["carrier-appetite-intelligence"] });
+      toast.success(`${s.label}: evaluation complete`);
+      setSelectedId(item.id);
+    },
+    onError: (err: unknown, s) =>
+      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
+  });
+
+  return (
+    <div className="mt-6 space-y-5">
+      <Panel
+        title="Live evaluations — wired to Backend-AI-OS"
+        subtitle={`/api/es/carrier-appetite-intelligence — real Workflow_18 fixture scenarios (the panels above stay mocked)${
+          items.length > 0 ? ` · ${suppressedCount} of ${items.length} suppressed so far` : ""
+        }`}
+      >
+        <div className="flex flex-wrap gap-2">
+          {APPETITE_FIXTURE_SCENARIOS.map((s) => (
+            <Button
+              key={s.ref}
+              variant="secondary"
+              disabled={runMutation.isPending}
+              onClick={() => runMutation.mutate(s)}
+            >
+              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {s.label}
+            </Button>
+          ))}
+        </div>
+      </Panel>
+
+      {listQuery.isLoading && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading evaluations…
+        </div>
+      )}
+      {listQuery.isError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          {listQuery.error instanceof Error
+            ? listQuery.error.message
+            : "Failed to load evaluations."}
+        </div>
+      )}
+
+      {!listQuery.isLoading && !listQuery.isError && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel title="Evaluations" subtitle={`${items.length} generated`}>
+            {items.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No evaluations yet — run a scenario above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
+                      selectedId === row.id ? "bg-secondary/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate font-mono text-sm">
+                        {row.submission_id ?? row.id}
+                      </span>
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <Chip>{row.status}</Chip>
+                        {row.payload?.pattern_type && (
+                          <Chip tone={APPETITE_PATTERN_TONE[row.payload.pattern_type] ?? "warn"}>
+                            {row.payload.pattern_type.replace(/_/g, " ")}
+                          </Chip>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <div className="space-y-5">
+            {!selectedId ? (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Select an evaluation from the list.
+                </div>
+              </Panel>
+            ) : detailQuery.isLoading ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading evaluation…
+                </div>
+              </Panel>
+            ) : detailQuery.isError ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {detailQuery.error instanceof Error
+                    ? detailQuery.error.message
+                    : "Failed to load evaluation."}
+                </div>
+              </Panel>
+            ) : detailQuery.data?.payload ? (
+              <LiveSignalCard
+                itemId={detailQuery.data.id}
+                payload={detailQuery.data.payload}
+                onActed={appendLog}
+              />
+            ) : (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No evaluation data for this item.
+                </div>
+              </Panel>
+            )}
+
+            <Panel
+              title="Activity (live section)"
+              subtitle="This session's real actions"
+              actions={<FoundationBadge kind="matching" />}
+            >
+              <ul className="divide-y divide-border">
+                {log.length === 0 ? (
+                  <li className="py-6 text-center text-sm text-muted-foreground">
+                    No activity yet this session.
+                  </li>
+                ) : (
+                  log.slice(0, 10).map((d, i) => (
+                    <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                      <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                        {d.at}
+                      </span>
+                      <div className="flex-1">
+                        <div>
+                          <b>{d.who}</b> — {d.what}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                      </div>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </Panel>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
