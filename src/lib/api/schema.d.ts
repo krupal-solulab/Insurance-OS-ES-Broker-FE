@@ -1109,6 +1109,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/es/carrier-appetite-intelligence/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Carrier Appetite Intelligence */
+        post: operations["run_carrier_appetite_intelligence_api_es_carrier_appetite_intelligence_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/carrier-appetite-intelligence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Carrier Appetite Intelligence */
+        get: operations["list_carrier_appetite_intelligence_api_es_carrier_appetite_intelligence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/carrier-appetite-intelligence/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Carrier Appetite Intelligence */
+        get: operations["get_carrier_appetite_intelligence_api_es_carrier_appetite_intelligence__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/carrier-appetite-intelligence/{item_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve
+         * @description A human approving a GENUINE_INCONSISTENCY suggestion — records
+         *     approval only. Per the approved plan, no mutable Carrier Appetite
+         *     Profile store exists in this codebase, so approval does NOT itself
+         *     change any accepted/excluded class list; a human still applies that
+         *     change manually via whatever real profile-management path Market
+         *     Matching eventually builds (out of scope for this PRD, per FR-6).
+         */
+        post: operations["approve_api_es_carrier_appetite_intelligence__item_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/carrier-appetite-intelligence/{item_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss
+         * @description FR-4's suggestion-queue: dismissing a suggestion. ``ReviewAction``
+         *     has no "dismissed" value (frozen enum), so this sets the
+         *     workflow-owned ``payload.status`` directly — same pattern as Agent
+         *     Communication's ``discard``.
+         */
+        post: operations["dismiss_api_es_carrier_appetite_intelligence__item_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1248,6 +1347,35 @@ export interface components {
             item: string;
             /** Reason */
             reason: string;
+        };
+        /** CarrierAppetiteEvaluationPayload */
+        CarrierAppetiteEvaluationPayload: {
+            /** Suggestion Id */
+            suggestion_id: string;
+            /** Carrier Id */
+            carrier_id: string;
+            /**
+             * Carrier Name
+             * @default
+             */
+            carrier_name: string;
+            /** Class Code */
+            class_code: string;
+            /**
+             * Evidence
+             * @default []
+             */
+            evidence: components["schemas"]["EvidenceItemOut"][];
+            /** Pattern Type */
+            pattern_type: string;
+            /** Suggested Action */
+            suggested_action?: string | null;
+            /**
+             * Status
+             * @default SUPPRESSED
+             */
+            status: string;
+            metadata_refresh?: components["schemas"]["MetadataRefreshOut"] | null;
         };
         /** CarrierConfirmationOut */
         CarrierConfirmationOut: {
@@ -1631,6 +1759,19 @@ export interface components {
              */
             status_log: components["schemas"]["StatusLogEntryOut"][];
         };
+        /** EvidenceItemOut */
+        EvidenceItemOut: {
+            /** Submission Id */
+            submission_id: string;
+            /** Outcome */
+            outcome: string;
+            /** Date */
+            date: string;
+            /** Stated Reason */
+            stated_reason?: string | null;
+            /** Reason Scope */
+            reason_scope?: string | null;
+        };
         /** ExcludedCarrierOut */
         ExcludedCarrierOut: {
             /** Carrier Id */
@@ -1840,6 +1981,13 @@ export interface components {
              */
             excluded: components["schemas"]["ExcludedCarrierOut"][];
             diligent_search: components["schemas"]["DiligentSearchOut"];
+        };
+        /** MetadataRefreshOut */
+        MetadataRefreshOut: {
+            /** Appetite Confidence */
+            appetite_confidence: string;
+            /** Appetite Last Updated */
+            appetite_last_updated: string;
         };
         /** MissingItem */
         MissingItem: {
@@ -2317,6 +2465,21 @@ export interface components {
             lifecycle_stage: string;
             /** Status */
             status: string;
+        };
+        /** ReviewItemOut */
+        verticals__es__workflows__carrier_appetite_intelligence__router__ReviewItemOut: {
+            /** Id */
+            id: string;
+            /** Submission Id */
+            submission_id: string | null;
+            /** Status */
+            status: string;
+            payload?: components["schemas"]["CarrierAppetiteEvaluationPayload"] | null;
+        };
+        /** RunRequest */
+        verticals__es__workflows__carrier_appetite_intelligence__router__RunRequest: {
+            /** Scenario Ref */
+            scenario_ref: string;
         };
         /** ReviewItemOut */
         verticals__es__workflows__diligent_search__router__ReviewItemOut: {
@@ -4486,6 +4649,186 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["verticals__es__workflows__diligent_search__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_carrier_appetite_intelligence_api_es_carrier_appetite_intelligence_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["verticals__es__workflows__carrier_appetite_intelligence__router__RunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__carrier_appetite_intelligence__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_carrier_appetite_intelligence_api_es_carrier_appetite_intelligence_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__carrier_appetite_intelligence__router__ReviewItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_carrier_appetite_intelligence_api_es_carrier_appetite_intelligence__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__carrier_appetite_intelligence__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_es_carrier_appetite_intelligence__item_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__carrier_appetite_intelligence__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_api_es_carrier_appetite_intelligence__item_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__carrier_appetite_intelligence__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
