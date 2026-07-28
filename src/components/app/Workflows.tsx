@@ -108,6 +108,17 @@ import {
   type FixtureScenario as AppetiteFixtureScenario,
 } from "@/lib/api/carrierAppetiteIntelligence";
 import {
+  FIXTURE_SCENARIOS as REPORTING_FIXTURE_SCENARIOS,
+  getPipelineReporting,
+  listPipelineReporting,
+  runPipelineReporting,
+  type CarrierPerformanceOut,
+  type FixtureScenario as ReportingFixtureScenario,
+  type FunnelStageOut,
+  type PipelineReportPayload,
+  type RemarketOutcomeOut,
+} from "@/lib/api/pipelineReporting";
+import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
@@ -8002,6 +8013,288 @@ export function PipelineCarrierReporting() {
           </div>
         </Panel>
       </div>
+
+      <LiveReportsSection />
+    </div>
+  );
+}
+
+function LiveFunnelStage({ stage, max }: { stage: FunnelStageOut; max: number }) {
+  const gap = stage.count == null;
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      <div className="w-40 shrink-0 text-xs text-muted-foreground">{stage.stage}</div>
+      {gap ? (
+        <div className="flex h-6 flex-1 items-center gap-1.5 rounded-md border-2 border-dashed border-warn/50 bg-warn/5 px-2 text-[11px] text-warn">
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          Data gap — never interpolated
+        </div>
+      ) : (
+        <div className="h-6 flex-1 overflow-hidden rounded-md bg-secondary">
+          <div
+            className="flex h-full items-center justify-end bg-accent px-2 text-[10px] font-mono text-accent-foreground transition-[width] duration-700 ease-out"
+            style={{ width: `${Math.max(4, (stage.count! / max) * 100)}%` }}
+          >
+            {stage.count}
+          </div>
+        </div>
+      )}
+      <div className="w-12 shrink-0 text-right font-mono text-[11px] text-muted-foreground">
+        {stage.pct_of_prior_stage != null ? `${stage.pct_of_prior_stage}%` : "—"}
+      </div>
+    </div>
+  );
+}
+
+const REMARKET_OUTCOME_TONE: Record<string, "success" | "accent" | "neutral"> = {
+  savings_identified: "success",
+  confirmation_value: "accent",
+  not_remarketed: "neutral",
+};
+
+function LiveReportCard({ payload }: { payload: PipelineReportPayload }) {
+  const hasGap = payload.data_completeness.status === "PARTIAL";
+  const maxCount = Math.max(1, ...payload.funnel.map((f) => f.count ?? 0));
+
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-serif text-xl">{payload.period}</h3>
+          <div className="mt-1 text-[11px] text-muted-foreground">{payload.report_id}</div>
+        </div>
+        <FoundationBadge kind="matching" />
+      </div>
+
+      <div
+        className={`mt-4 flex items-start gap-2 rounded-lg border-2 p-3 text-sm ${
+          hasGap ? "border-warn/40 bg-warn/5" : "border-success/30 bg-success/5"
+        }`}
+      >
+        {hasGap ? (
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+        ) : (
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+        )}
+        <div>
+          <b>Data completeness: {payload.data_completeness.status}</b>
+          {payload.data_completeness.gaps.map((g, i) => (
+            <div key={i} className="mt-1 text-[11px] text-foreground">
+              {g.stage}: {g.reason}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {payload.funnel.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-2 flex items-center justify-between text-xs font-medium">
+            <span>Submission → bound funnel</span>
+            <span className="text-muted-foreground">
+              Overall conversion:{" "}
+              {payload.overall_conversion_pct != null
+                ? `${payload.overall_conversion_pct}%`
+                : "— (withheld, gap present)"}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {payload.funnel.map((f) => (
+              <LiveFunnelStage key={f.stage} stage={f} max={maxCount} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {payload.carrier_performance.length > 0 && (
+        <div className="mt-5">
+          <div className="mb-2 text-xs font-medium">
+            Carrier hit-rate comparison — sorted by volume, not rate
+          </div>
+          <table className="w-full text-sm">
+            <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="py-1.5 text-left">Carrier</th>
+                <th className="py-1.5 text-right">Submissions</th>
+                <th className="py-1.5 text-right">Quote rate</th>
+                <th className="py-1.5 text-right">Bind rate</th>
+                <th className="py-1.5 text-right">Overall hit rate</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {payload.carrier_performance.map((c: CarrierPerformanceOut) => (
+                <tr key={c.carrier_name}>
+                  <td className="py-2 font-medium">
+                    <div className="flex items-center gap-2">
+                      {c.carrier_name}
+                      {c.low_volume_flag && <Chip tone="warn">Low volume</Chip>}
+                    </div>
+                  </td>
+                  <td className="py-2 text-right tabular-nums">{c.submissions_approached}</td>
+                  <td className="py-2 text-right font-mono">{c.quote_rate}%</td>
+                  <td className="py-2 text-right font-mono">{c.bind_rate}%</td>
+                  <td className="py-2 text-right font-mono">{c.overall_hit_rate}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {payload.remarketing_value.length > 0 && (
+        <div className="mt-5">
+          <div className="mb-2 text-xs font-medium">Remarketing value</div>
+          <ul className="space-y-2">
+            {payload.remarketing_value.map((r: RemarketOutcomeOut, i: number) => (
+              <li key={i} className="rounded-lg border border-border p-3 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{r.account}</span>
+                  <Chip tone={REMARKET_OUTCOME_TONE[r.outcome_type] ?? "neutral"}>
+                    {r.outcome_type.replace(/_/g, " ")}
+                  </Chip>
+                </div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  Trigger: {r.trigger_level}
+                  {r.savings_amount != null && ` · Savings: $${r.savings_amount.toLocaleString()}`}
+                </div>
+                {r.note && <div className="mt-1 text-[11px] text-muted-foreground">{r.note}</div>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function LiveReportsSection() {
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const listQuery = useQuery({
+    queryKey: ["pipeline-reporting", "list"],
+    queryFn: listPipelineReporting,
+  });
+  const items = listQuery.data ?? [];
+
+  const detailQuery = useQuery({
+    queryKey: ["pipeline-reporting", "detail", selectedId],
+    queryFn: () => getPipelineReporting(selectedId!),
+    enabled: Boolean(selectedId),
+  });
+
+  const runMutation = useMutation({
+    mutationFn: (s: ReportingFixtureScenario) => runPipelineReporting(s.ref),
+    onSuccess: (item, s) => {
+      queryClient.invalidateQueries({ queryKey: ["pipeline-reporting"] });
+      toast.success(`${s.label}: report generated`);
+      setSelectedId(item.id);
+    },
+    onError: (err: unknown, s) =>
+      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
+  });
+
+  return (
+    <div className="mt-6 space-y-5">
+      <Panel
+        title="Live reports — wired to Backend-AI-OS"
+        subtitle="/api/es/pipeline-reporting — real Workflow_19 fixture scenarios (the panels above stay mocked). No approve/escalate here — a report isn't a determination a human approves or declines."
+      >
+        <div className="flex flex-wrap gap-2">
+          {REPORTING_FIXTURE_SCENARIOS.map((s) => (
+            <Button
+              key={s.ref}
+              variant="secondary"
+              disabled={runMutation.isPending}
+              onClick={() => runMutation.mutate(s)}
+            >
+              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {s.label}
+            </Button>
+          ))}
+        </div>
+      </Panel>
+
+      {listQuery.isLoading && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading reports…
+        </div>
+      )}
+      {listQuery.isError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load reports."}
+        </div>
+      )}
+
+      {!listQuery.isLoading && !listQuery.isError && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel title="Reports" subtitle={`${items.length} generated`}>
+            {items.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No reports yet — run a scenario above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
+                      selectedId === row.id ? "bg-secondary/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate font-mono text-sm">
+                        {row.submission_id ?? row.id}
+                      </span>
+                      <div className="mt-1.5">
+                        <Chip>{row.status}</Chip>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <div>
+            {!selectedId ? (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Select a report from the list.
+                </div>
+              </Panel>
+            ) : detailQuery.isLoading ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading report…
+                </div>
+              </Panel>
+            ) : detailQuery.isError ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {detailQuery.error instanceof Error
+                    ? detailQuery.error.message
+                    : "Failed to load report."}
+                </div>
+              </Panel>
+            ) : detailQuery.data?.payload ? (
+              <LiveReportCard payload={detailQuery.data.payload} />
+            ) : (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No report data for this item.
+                </div>
+              </Panel>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1208,6 +1208,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/es/pipeline-reporting/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Pipeline Reporting */
+        post: operations["run_pipeline_reporting_api_es_pipeline_reporting_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/pipeline-reporting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Pipeline Reporting */
+        get: operations["list_pipeline_reporting_api_es_pipeline_reporting_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/es/pipeline-reporting/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pipeline Reporting */
+        get: operations["get_pipeline_reporting_api_es_pipeline_reporting__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1412,6 +1463,24 @@ export interface components {
              */
             flags: string[];
         };
+        /** CarrierPerformanceOut */
+        CarrierPerformanceOut: {
+            /** Carrier Name */
+            carrier_name: string;
+            /** Submissions Approached */
+            submissions_approached: number;
+            /** Quote Rate */
+            quote_rate: number;
+            /** Bind Rate */
+            bind_rate: number;
+            /** Overall Hit Rate */
+            overall_hit_rate: number;
+            /**
+             * Low Volume Flag
+             * @default false
+             */
+            low_volume_flag: boolean;
+        };
         /** CarrierResponseOut */
         CarrierResponseOut: {
             /** Endorsement Number */
@@ -1557,6 +1626,23 @@ export interface components {
              * @default []
              */
             citations: components["schemas"]["CoverLetterCitationOut"][];
+        };
+        /** DataCompletenessOut */
+        DataCompletenessOut: {
+            /** Status */
+            status: string;
+            /**
+             * Gaps
+             * @default []
+             */
+            gaps: components["schemas"]["DataGapOut"][];
+        };
+        /** DataGapOut */
+        DataGapOut: {
+            /** Stage */
+            stage: string;
+            /** Reason */
+            reason: string;
         };
         /** DeclinationOut */
         DeclinationOut: {
@@ -1873,6 +1959,15 @@ export interface components {
             /** Timestamp */
             timestamp?: string | null;
         };
+        /** FunnelStageOut */
+        FunnelStageOut: {
+            /** Stage */
+            stage: string;
+            /** Count */
+            count?: number | null;
+            /** Pct Of Prior Stage */
+            pct_of_prior_stage?: number | null;
+        };
         /** GapItemOut */
         GapItemOut: {
             /** Item */
@@ -2063,6 +2158,37 @@ export interface components {
              */
             status_log: components["schemas"]["StatusLogEntryOut"][];
         };
+        /** PipelineReportPayload */
+        PipelineReportPayload: {
+            /** Report Id */
+            report_id: string;
+            /** Period */
+            period: string;
+            /**
+             * @default {
+             *       "status": "COMPLETE",
+             *       "gaps": []
+             *     }
+             */
+            data_completeness: components["schemas"]["DataCompletenessOut"];
+            /**
+             * Funnel
+             * @default []
+             */
+            funnel: components["schemas"]["FunnelStageOut"][];
+            /** Overall Conversion Pct */
+            overall_conversion_pct?: number | null;
+            /**
+             * Carrier Performance
+             * @default []
+             */
+            carrier_performance: components["schemas"]["CarrierPerformanceOut"][];
+            /**
+             * Remarketing Value
+             * @default []
+             */
+            remarketing_value: components["schemas"]["RemarketOutcomeOut"][];
+        };
         /** PolicyIssuanceOut */
         PolicyIssuanceOut: {
             /** Carrier Stated Timeline Days */
@@ -2200,6 +2326,19 @@ export interface components {
             /** Market Matching Output Id */
             market_matching_output_id?: string | null;
             comparison_output?: components["schemas"]["ComparisonOutputOut"] | null;
+        };
+        /** RemarketOutcomeOut */
+        RemarketOutcomeOut: {
+            /** Account */
+            account: string;
+            /** Trigger Level */
+            trigger_level: string;
+            /** Outcome Type */
+            outcome_type: string;
+            /** Savings Amount */
+            savings_amount?: number | null;
+            /** Note */
+            note?: string | null;
         };
         /** RequestedChangeOut */
         RequestedChangeOut: {
@@ -2551,6 +2690,21 @@ export interface components {
             scenario_ref: string;
             /** Carrier Id */
             carrier_id?: string | null;
+        };
+        /** ReviewItemOut */
+        verticals__es__workflows__pipeline_reporting__router__ReviewItemOut: {
+            /** Id */
+            id: string;
+            /** Submission Id */
+            submission_id: string | null;
+            /** Status */
+            status: string;
+            payload?: components["schemas"]["PipelineReportPayload"] | null;
+        };
+        /** RunRequest */
+        verticals__es__workflows__pipeline_reporting__router__RunRequest: {
+            /** Scenario Ref */
+            scenario_ref: string;
         };
         /** ReviewItemOut */
         verticals__es__workflows__quote_comparison__router__ReviewItemOut: {
@@ -4829,6 +4983,114 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["verticals__es__workflows__carrier_appetite_intelligence__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_pipeline_reporting_api_es_pipeline_reporting_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["verticals__es__workflows__pipeline_reporting__router__RunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__pipeline_reporting__router__ReviewItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pipeline_reporting_api_es_pipeline_reporting_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__pipeline_reporting__router__ReviewItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pipeline_reporting_api_es_pipeline_reporting__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+                "x-user-id"?: string | null;
+                "x-role"?: string | null;
+                "x-vertical"?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["verticals__es__workflows__pipeline_reporting__router__ReviewItemOut"];
                 };
             };
             /** @description Validation Error */
