@@ -54,3 +54,18 @@ export function runPackageAssembly(scenarioRef: string, carrierId?: string) {
 export function actOnPackageAssembly(itemId: string, action: PackageActionVerb) {
   return api.post<ReviewItemOut>(`${BASE}/${itemId}/${action}`);
 }
+
+/** Additive alongside the fixture-scenario run above: assembles a real
+ * package per carrier from an ACTUAL Market Matching review item — genuine
+ * Market Matching -> Package Assembly hand-off, not another fixture
+ * scenario. Omitting carrierId assembles one independent package per
+ * carrier the real submission matched. */
+export function runPackageAssemblyFromMarketMatching(
+  marketMatchingReviewItemId: string,
+  carrierId?: string,
+) {
+  return api.post<ReviewItemOut[]>(`${BASE}/run-from-market-matching`, {
+    market_matching_review_item_id: marketMatchingReviewItemId,
+    ...(carrierId ? { carrier_id: carrierId } : {}),
+  });
+}

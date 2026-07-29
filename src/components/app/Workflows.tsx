@@ -21,6 +21,7 @@ import {
   getPackageAssembly,
   listPackageAssembly,
   runPackageAssembly,
+  runPackageAssemblyFromMarketMatching,
   type PackageActionVerb,
   type PackageAssemblyPayload,
 } from "@/lib/api/packageAssembly";
@@ -32,8 +33,6 @@ import {
   listAgentCommunication,
   runAgentCommunication,
   type AgentCommActionVerb,
-  type DraftCommunicationOut,
-  type FixtureTrigger,
 } from "@/lib/api/agentCommunication";
 import {
   FIXTURE_SCENARIOS as QUOTE_FIXTURE_SCENARIOS,
@@ -55,6 +54,7 @@ import {
   resolveConfirmationDiscrepancy,
   resolvePolicyDiscrepancy,
   runBinderIssuance,
+  runBinderIssuanceFromQuote,
   type BindCoordinationPayload,
   type DiscrepancyOut,
   type DiscrepancyResolution,
@@ -103,6 +103,7 @@ import {
   getCarrierAppetiteIntelligence,
   listCarrierAppetiteIntelligence,
   runCarrierAppetiteIntelligence,
+  runCarrierAppetiteIntelligenceLive,
   type CarrierAppetiteEvaluationPayload,
   type EvidenceItemOut,
   type FixtureScenario as AppetiteFixtureScenario,
@@ -112,6 +113,7 @@ import {
   getPipelineReporting,
   listPipelineReporting,
   runPipelineReporting,
+  runPipelineReportingLive,
   type CarrierPerformanceOut,
   type FixtureScenario as ReportingFixtureScenario,
   type FunnelStageOut,
@@ -140,9 +142,6 @@ import {
   Scan,
   MessageSquare,
   FileSearch,
-  TrendingUp,
-  TrendingDown,
-  Ban,
   XCircle,
   Radar,
   Lock,
@@ -154,27 +153,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { simulateRequest } from "@/lib/simulate";
 import { PageHeader } from "./AppShell";
-import {
-  carrierPerformance,
-  retailAgents,
-  decisionsLog,
-  midTermChanges,
-  monthlyPipeline,
-  remarketing,
-  stateMix,
-  quotes,
-  binders,
-  diligentSearch,
-  appetiteSignals,
-  type Binder,
-  type Discrepancy,
-  type MidTermChange,
-  type Remarket,
-  type DiligentSearchRecord,
-  type DiligentSearchStateDetail,
-  pipelineCompleteness,
-  placementCycle,
-} from "./mocks";
 import type { ReactNode } from "react";
 
 /* ============================================================
@@ -684,6 +662,7 @@ export function SubmissionMarketMatching() {
                           search: {
                             submissionId: selectedRow.submission_id ?? selectedRow.id,
                             carriers: selectedCarriers.join(","),
+                            marketMatchingItemId: selectedRow.id,
                           },
                         });
                       }}
@@ -1451,6 +1430,8 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
     typeof search.submissionId === "string" ? search.submissionId : undefined;
   const upstreamCarriers =
     typeof search.carriers === "string" ? search.carriers.split(",").filter(Boolean) : [];
+  const upstreamMarketMatchingItemId =
+    typeof search.marketMatchingItemId === "string" ? search.marketMatchingItemId : undefined;
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -1494,6 +1475,19 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
     },
   });
 
+  const runFromMarketMatchingMutation = useMutation({
+    mutationFn: () => runPackageAssemblyFromMarketMatching(upstreamMarketMatchingItemId!),
+    onSuccess: (createdItems) => {
+      queryClient.invalidateQueries({ queryKey: ["package-assembly"] });
+      toast.success(
+        `Assembled ${createdItems.length} real package${createdItems.length === 1 ? "" : "s"} from Market Matching`,
+      );
+      if (createdItems[0]) setSelectedId(createdItems[0].id);
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to assemble from this selection"),
+  });
+
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
@@ -1508,14 +1502,32 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
       />
 
       {(upstreamSubmissionId || upstreamCarriers.length > 0) && (
-        <div className="mb-4 rounded-lg border border-dashed border-border bg-secondary/30 p-3 text-[11px] text-muted-foreground">
-          Arrived from Market Matching —{" "}
-          {upstreamCarriers.length > 0
-            ? `${upstreamCarriers.length} carrier(s) selected for ${upstreamSubmissionId ?? "a submission"}`
-            : upstreamSubmissionId}
-          . Package Assembly currently runs its own Workflow_11 fixture scenarios below
-          (scenario_01..06) — they're independent of that live selection until a real Market
-          Matching → Package Assembly hand-off exists on the backend.
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-secondary/40 p-3 text-[11px] text-muted-foreground">
+          <div>
+            Arrived from Market Matching —{" "}
+            {upstreamCarriers.length > 0
+              ? `${upstreamCarriers.length} carrier(s) selected for ${upstreamSubmissionId ?? "a submission"}`
+              : upstreamSubmissionId}
+            .
+          </div>
+          {upstreamMarketMatchingItemId ? (
+            <Button
+              variant="primary"
+              className="!py-1 !text-xs"
+              disabled={runFromMarketMatchingMutation.isPending}
+              onClick={() => runFromMarketMatchingMutation.mutate()}
+              title="Builds real package(s) from this Market Matching item's actual carrier matches, requirements, and persisted documents"
+            >
+              {runFromMarketMatchingMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              Assemble from this selection
+            </Button>
+          ) : (
+            "No Market Matching review item id was passed — run one of the fixture scenarios below instead."
+          )}
         </div>
       )}
 
@@ -1660,104 +1672,6 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
    ============================================================ */
 
 type Trigger = { source: string; detail: string };
-type FollowUpConfig = { carrier: string; window: string; elapsed: boolean };
-
-const copilotThreads: {
-  id: number;
-  agent: string;
-  agency: string;
-  subject: string;
-  unread: boolean;
-  snippet: string;
-  when: string;
-  tenureYears: number;
-  trigger: Trigger;
-  groundedIn?: { doc: string; page: number };
-  followUp?: FollowUpConfig;
-}[] = [
-  {
-    id: 1,
-    agent: "Ana Ruiz",
-    agency: "Marsh Southeast",
-    subject: "Palmetto Cold Storage — market Q&A",
-    unread: true,
-    snippet: "Confirming spoilage sub-limit at $500k…",
-    when: "8:42 AM",
-    tenureYears: 4,
-    trigger: {
-      source: "Market Matching",
-      detail: "Carrier panel ranked · Kinsale Insurance #1 fit, 4 of 5 carriers in appetite",
-    },
-    groundedIn: { doc: "Palmetto_SOV_2026.xlsx", page: 1 },
-  },
-  {
-    id: 2,
-    agent: "Michael Chen",
-    agency: "HUB International",
-    subject: "Ridgeline Contractors — missing SOV",
-    unread: true,
-    snippet: "Attached is the schedule you requested…",
-    when: "8:11 AM",
-    tenureYears: 2,
-    trigger: {
-      source: "Market Matching",
-      detail: "Per-carrier missing-info identified — SOV and 5-yr loss run outstanding for Markel",
-    },
-    groundedIn: { doc: "ACORD_125_Palmetto.pdf", page: 1 },
-    followUp: { carrier: "Markel", window: "10+ business days", elapsed: true },
-  },
-  {
-    id: 3,
-    agent: "Priya Natarajan",
-    agency: "Alliant Insurance",
-    subject: "Bayou Marine — placement update",
-    unread: false,
-    snippet: "Any early read on markets?…",
-    when: "Yesterday",
-    tenureYears: 6,
-    trigger: {
-      source: "Market Matching",
-      detail: "Carrier panel ranking in progress — no shortlist finalized yet",
-    },
-    followUp: { carrier: "Argo Group", window: "5–7 business days", elapsed: false },
-  },
-  {
-    id: 4,
-    agent: "Jordan Blake",
-    agency: "Gallagher",
-    subject: "Highline Hospitality — no-market notice",
-    unread: false,
-    snippet: "Understood, thanks for the quick turn…",
-    when: "Jan 09",
-    tenureYears: 3,
-    trigger: {
-      source: "Market Matching",
-      detail: "Zero-match result — 0 of 5 panel carriers in appetite for this exposure",
-    },
-  },
-];
-
-const initialCopilotDrafts = [
-  {
-    id: "d1",
-    title: "Quote summary",
-    tone: "Warm",
-    body: "Hi Ana, great news on Palmetto Cold Storage — Kinsale Insurance has come back with indicated terms of $187,400, including the $500k spoilage sub-limit you asked about. Two more markets are still reviewing. Happy to walk through it on a call.",
-  },
-  {
-    id: "d2",
-    title: "Missing info request",
-    tone: "Direct",
-    body: "Hi Michael, to keep Ridgeline Contractors moving with our panel we still need a current SOV and 5-year loss run. Would you be able to send those today so we can get markets responding by Wednesday?",
-  },
-  {
-    id: "d3",
-    title: "No-market notice",
-    tone: "Considerate",
-    body: "Hi Jordan, thanks for thinking of us on Highline Hospitality. After running it across our panel, this one falls outside every carrier's current appetite for the liquor liability exposure — we'd love to see the rest of your submissions this quarter.",
-    noMarketRule: true,
-  },
-];
 
 const TRIGGER_SOURCE_LABEL: Record<string, string> = {
   "quote-summary": "Quote Comparison",
@@ -1767,9 +1681,12 @@ const TRIGGER_SOURCE_LABEL: Record<string, string> = {
 };
 
 export function RetailAgentCopilot({ search = {} }: { search?: Record<string, unknown> }) {
-  // Handoff: Quote Comparison's "Present to retail agent" and Binder & Issuance's two
-  // BI-06 triggers all navigate here with a real trigger, replacing the manual-log
-  // fallback below for whichever thread matches the insured.
+  const queryClient = useQueryClient();
+
+  // Handoff: Quote Comparison's "Present to retail agent" and Binder & Issuance's/Endorsement
+  // Processing's triggers navigate here with real submission data. Landing here never creates a
+  // draft by itself — the broker must click "Import this trigger" below (same "nothing happens
+  // without a click" rule as FR-20), which then calls the real POST /run endpoint.
   const triggerKind = search.trigger;
   const externalTrigger =
     triggerKind === "quote-summary" ||
@@ -1781,238 +1698,238 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
           carrier: typeof search.carrier === "string" ? search.carrier : "",
           premium: typeof search.premium === "string" ? search.premium : "",
           insured: typeof search.insured === "string" ? search.insured : "",
+          submissionId: typeof search.submissionId === "string" ? search.submissionId : "",
         }
       : null;
 
-  const matchedThreadId =
-    externalTrigger &&
-    (copilotThreads.find(
-      (t) =>
-        externalTrigger.insured &&
-        t.subject.toLowerCase().includes(externalTrigger.insured.toLowerCase().split(" ")[0]),
-    )?.id ??
-      (externalTrigger.kind === "quote-summary" ? 4 : undefined));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newEmailOpen, setNewEmailOpen] = useState(false);
+  const [handoffImported, setHandoffImported] = useState(false);
 
-  const [active, setActive] = useState(matchedThreadId ?? 1);
-  const thread = copilotThreads.find((t) => t.id === active)!;
-  const relationship = retailAgents.find((a) => a.agency === thread.agency);
-  const isTriggeredThread = Boolean(externalTrigger) && active === matchedThreadId;
-  const displayTrigger: Trigger =
-    isTriggeredThread && externalTrigger
-      ? {
-          source: TRIGGER_SOURCE_LABEL[externalTrigger.kind],
-          detail:
-            externalTrigger.kind === "quote-summary"
-              ? `Broker selected ${externalTrigger.carrier} to present — ${externalTrigger.premium}`
-              : externalTrigger.kind === "placement-confirmation"
-                ? `Clean bind confirmed with ${externalTrigger.carrier} — ${externalTrigger.premium}`
-                : externalTrigger.kind === "policy-docs-delivered"
-                  ? `Policy documents reconciled against bound terms and forwarded — ${externalTrigger.carrier}`
-                  : `Endorsement confirmed and reconciled item by item — ${externalTrigger.carrier}`,
-        }
-      : thread.trigger;
+  const [composeText, setComposeText] = useState("");
+  const [composeBaseline, setComposeBaseline] = useState("");
 
-  const [drafts, setDrafts] = useState(() => {
-    if (!externalTrigger) return initialCopilotDrafts;
-    if (externalTrigger.kind === "quote-summary") {
-      return [
-        {
-          id: "triggered-quote",
-          title: "Quote summary (from Quote Comparison)",
-          tone: "Warm",
-          body: `Hi Jordan, wanted to pass along that ${externalTrigger.carrier} came back with a quote at ${externalTrigger.premium} on Highline Hospitality. Happy to walk through terms whenever works for you.`,
-        },
-        ...initialCopilotDrafts,
-      ];
-    }
-    if (externalTrigger.kind === "placement-confirmation") {
-      return [
-        {
-          id: "triggered-placement",
-          title: "Placement Confirmation (from Binder & Issuance)",
-          tone: "Warm",
-          body: `Hi team, confirming ${externalTrigger.insured || "the account"} is now bound with ${externalTrigger.carrier} at ${externalTrigger.premium}. Binder and full terms to follow shortly.`,
-        },
-        ...initialCopilotDrafts,
-      ];
-    }
-    if (externalTrigger.kind === "policy-docs-delivered") {
-      return [
-        {
-          id: "triggered-docs",
-          title: "Policy Documents Delivered (from Binder & Issuance)",
-          tone: "Warm",
-          body: `Hi team, the issued policy for ${externalTrigger.insured || "the account"} has been reconciled against the bound terms and is attached. Let us know if you have any questions.`,
-        },
-        ...initialCopilotDrafts,
-      ];
-    }
-    return [
-      {
-        id: "triggered-endorsement",
-        title: "Endorsement Confirmed (from Endorsement Processing)",
-        tone: "Warm",
-        body: `Hi team, the mid-term change for ${externalTrigger.insured || "the account"} has been issued by ${externalTrigger.carrier} and reconciled item by item against your original request. Updated endorsement attached.`,
-      },
-      ...initialCopilotDrafts,
-    ];
-  });
-  const [composeText, setComposeText] = useState(
-    "Draft attached — please review and send when ready.",
-  );
-  const [composeBaseline, setComposeBaseline] = useState(
-    "Draft attached — please review and send when ready.",
-  );
-
-  const [messages, setMessages] = useState([
-    {
-      id: "m1",
-      body: "Thanks Ana — reviewing now, we're ranking it across our panel and should have indicated terms within the hour. Palmetto's loss history and sprinkler profile look strong across every carrier we'd send it to. We can confirm the $500k spoilage sub-limit is a standard ask.",
-      sentAt: null as string | null,
-      regenerating: false,
-    },
-    {
-      id: "m2",
-      body: "After — per our standard process we don't disclose the carrier name until you've confirmed broker of record on this account. Once that's on file we'll name Kinsale Insurance directly in the terms letter.",
-      sentAt: null as string | null,
-      regenerating: false,
-    },
-  ]);
-
-  const [followUpSent, setFollowUpSent] = useState<Record<number, boolean>>({});
-  const [manualTriggerOpen, setManualTriggerOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
   const [manualCarrier, setManualCarrier] = useState("");
   const [manualPremium, setManualPremium] = useState("");
   const [manualOutcome, setManualOutcome] = useState<"Quoted" | "Bound">("Quoted");
+  const [manualContext, setManualContext] = useState("");
 
-  const [log, setLog] = useState<LogEntry[]>(() => [
-    {
-      at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      who: "AI (Matching/Ranking Core)",
-      what: `Draft generated — triggered by ${displayTrigger.source}`,
-      ctx: `${thread.agent} · ${thread.subject}`,
-      conf: "91%",
-    },
-  ]);
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [followUpWindowDays, setFollowUpWindowDays] = useState("10");
+  const [followUpElapsedDays, setFollowUpElapsedDays] = useState("12");
 
-  function appendLog(who: string, what: string, ctx: string, conf = "—") {
+  const [log, setLog] = useState<LogEntry[]>([]);
+
+  function appendLog(who: string, what: string, ctx: string) {
     setLog((prev) => [
       {
         at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         who,
         what,
         ctx,
-        conf,
+        conf: "—",
       },
       ...prev,
     ]);
   }
 
-  function sendMessage(id: string) {
-    const msg = messages.find((m) => m.id === id);
-    if (!msg || msg.sentAt) return;
-    const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, sentAt: stamp } : m)));
-    appendLog(
-      "Sam D. (Broker)",
-      "Sent — broker-approved draft",
-      `${thread.agent} · ${thread.subject}`,
-    );
-  }
+  const listQuery = useQuery({
+    queryKey: ["agent-communication", "list"],
+    queryFn: listAgentCommunication,
+  });
+  const items = listQuery.data ?? [];
 
-  async function regenerateMessage(id: string) {
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, regenerating: true } : m)));
-    try {
-      const msg = messages.find((m) => m.id === id)!;
-      const next = await simulateRequest(msg.body);
-      setMessages((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, body: next, regenerating: false } : m)),
+  useEffect(() => {
+    if (!selectedId && listQuery.data && listQuery.data.length > 0) {
+      setSelectedId(listQuery.data[0].id);
+    }
+  }, [listQuery.data, selectedId]);
+
+  const detailQuery = useQuery({
+    queryKey: ["agent-communication", "detail", selectedId],
+    queryFn: () => getAgentCommunication(selectedId!),
+    enabled: Boolean(selectedId),
+  });
+  const payload = detailQuery.data?.payload ?? null;
+  const gated = Boolean(payload?.requires_compliance_review);
+
+  const relatedItems = payload
+    ? items.filter((row) => row.id !== selectedId && row.submission_id === payload.submission_id)
+    : [];
+
+  useEffect(() => {
+    setComposeText(payload?.body ?? "");
+    setComposeBaseline(payload?.body ?? "");
+  }, [selectedId, payload?.body]);
+
+  const runMutation = useMutation({
+    mutationFn: (t: { trigger: Record<string, unknown>; label: string }) =>
+      runAgentCommunication(t.trigger),
+    onSuccess: (item, t) => {
+      queryClient.invalidateQueries({ queryKey: ["agent-communication"] });
+      toast.success(
+        item.deduplicated
+          ? `${t.label}: existing draft reused (deduplicated, FR-5)`
+          : `${t.label}: draft generated`,
       );
       appendLog(
-        "AI (Matching/Ranking Core)",
-        "Draft regenerated",
-        `${thread.agent} · ${thread.subject}`,
+        "AI (Agent Communication)",
+        item.deduplicated ? "Existing draft reused (FR-5)" : "Draft generated",
+        t.label,
       );
-    } catch {
-      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, regenerating: false } : m)));
-      toast.error("Regeneration failed — try again.");
+      setSelectedId(item.id);
+      setNewEmailOpen(false);
+      setManualOpen(false);
+      setFollowUpOpen(false);
+    },
+    onError: (err: unknown, t) => {
+      toast.error(err instanceof Error ? err.message : `Failed to draft "${t.label}"`);
+    },
+  });
+
+  const actionMutation = useMutation({
+    mutationFn: (action: AgentCommActionVerb) => actOnAgentCommunication(selectedId!, action),
+    onSuccess: (item, action) => {
+      appendLog(
+        "You",
+        `${AGENT_ACTION_LABEL[action]} — POST /api/es/agent-communication/${selectedId}/${action}`,
+        `Status now "${item.status}"`,
+      );
+      toast.success(`${AGENT_ACTION_LABEL[action]} succeeded`);
+      queryClient.invalidateQueries({ queryKey: ["agent-communication"] });
+    },
+    onError: (err: unknown, action) => {
+      toast.error(err instanceof Error ? err.message : `${AGENT_ACTION_LABEL[action]} failed`);
+    },
+  });
+
+  const clearMutation = useMutation({
+    mutationFn: () => complianceClear(selectedId!),
+    onSuccess: () => {
+      appendLog(
+        "You",
+        "Compliance-clear",
+        `POST /api/es/agent-communication/${selectedId}/compliance-clear`,
+      );
+      toast.success("Compliance gate cleared");
+      queryClient.invalidateQueries({ queryKey: ["agent-communication"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(
+        err instanceof Error ? err.message : "Compliance-clear failed (senior/admin only)",
+      );
+    },
+  });
+
+  function copyDraft() {
+    navigator.clipboard
+      .writeText(composeText)
+      .then(() => toast.success("Draft copied"))
+      .catch(() => toast.error("Couldn't copy — select the text and copy manually."));
+  }
+
+  function runManualTrigger() {
+    if (!payload || !manualCarrier.trim() || !manualPremium.trim()) return;
+    const isQuote = manualOutcome === "Quoted";
+    const trigger: Record<string, unknown> = {
+      trigger_type: isQuote ? "QUOTE_TERMS_SUMMARY" : "PLACEMENT_CONFIRMATION",
+      source_workflow: "Manual broker input (Quote Comparison workflow not yet built)",
+      submission_id: payload.submission_id,
+      named_insured: payload.named_insured,
+      retail_agent_name: payload.retail_agent_name,
+      retail_agency: payload.retail_agency,
+      carrier_name: manualCarrier.trim(),
+    };
+    if (isQuote) {
+      trigger.quoted_terms = {
+        premium: manualPremium.trim(),
+        limits: "Not specified",
+        prior_expiring_premium_context: "Not specified",
+      };
+      if (manualContext.trim()) trigger.quote_context = manualContext.trim();
+    } else {
+      trigger.bound_terms = {
+        premium: manualPremium.trim(),
+        limits: "Not specified",
+        effective_date: "Not specified",
+      };
     }
-  }
-
-  function editMessage(id: string) {
-    const msg = messages.find((m) => m.id === id);
-    if (!msg) return;
-    setComposeText(msg.body);
-    setComposeBaseline(msg.body);
-    toast("Loaded into the reply box below for editing");
-  }
-
-  function applyDraft(id: string) {
-    const d = drafts.find((x) => x.id === id);
-    if (!d) return;
-    setComposeText(d.body);
-    setComposeBaseline(d.body);
-    appendLog(
-      "Sam D. (Broker)",
-      `Selected "${d.title}" draft for this thread`,
-      `${thread.agent} · ${thread.subject}`,
-    );
-  }
-
-  function sendCompose() {
-    const editDistance = Math.abs(composeText.length - composeBaseline.length);
-    appendLog(
-      "Sam D. (Broker)",
-      editDistance === 0
-        ? "Sent — no edits from AI draft"
-        : `Sent — edited (${editDistance} characters different from AI draft)`,
-      `${thread.agent} · ${thread.subject}`,
-    );
-    toast.success("Marked as sent");
-    setComposeBaseline(composeText);
-  }
-
-  function generateFollowUp() {
-    if (!thread.followUp || followUpSent[thread.id]) return;
-    const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    setDrafts((prev) => [
-      {
-        id: `followup-${thread.id}`,
-        title: "No-response follow-up",
-        tone: "Direct",
-        body: `Hi ${thread.agent.split(" ")[0]}, following up on ${thread.subject.split(" — ")[0]} — haven't heard back from ${thread.followUp!.carrier} within their stated ${thread.followUp!.window} acceptance window. Wanted to check in before we nudge them directly.`,
-      },
-      ...prev,
-    ]);
-    setFollowUpSent((prev) => ({ ...prev, [thread.id]: true }));
-    appendLog(
-      "AI (Matching/Ranking Core)",
-      `No-response follow-up generated (1 of 1 max) — ${thread.followUp.carrier}'s ${thread.followUp.window} window elapsed with no reply`,
-      `${thread.agent} · ${thread.subject}`,
-    );
-    toast(`Follow-up drafted at ${stamp}`);
-  }
-
-  function logManualTrigger() {
-    if (!manualCarrier.trim() || !manualPremium.trim()) return;
-    const draftId = `manual-${Date.now() % 100000}`;
-    setDrafts((prev) => [
-      {
-        id: draftId,
-        title: "Quote summary",
-        tone: "Warm",
-        body: `Hi ${thread.agent.split(" ")[0]}, wanted to pass along that ${manualCarrier.trim()} came back ${manualOutcome === "Quoted" ? "with a quote" : "and bound"} at ${manualPremium.trim()} on ${thread.subject.split(" — ")[0]}. Happy to walk through terms whenever works for you.`,
-      },
-      ...prev,
-    ]);
-    appendLog(
-      "Sam D. (Broker)",
-      `Manually logged outcome — ${manualCarrier.trim()} ${manualOutcome.toLowerCase()} at ${manualPremium.trim()} (Quote Comparison not yet built — manual trigger)`,
-      `${thread.agent} · ${thread.subject}`,
-    );
+    runMutation.mutate({
+      trigger,
+      label: `${isQuote ? "Quote summary" : "Placement confirmation"} — ${manualCarrier.trim()}`,
+    });
     setManualCarrier("");
     setManualPremium("");
-    setManualTriggerOpen(false);
+    setManualContext("");
+  }
+
+  function runFollowUp() {
+    if (!payload) return;
+    const windowDays = Number(followUpWindowDays) || 0;
+    const elapsedDays = Number(followUpElapsedDays) || 0;
+    const trigger: Record<string, unknown> = {
+      trigger_type: "NO_RESPONSE_FOLLOWUP",
+      source_workflow: "Retail Agent Communication Copilot (No-Response Monitor)",
+      submission_id: payload.submission_id,
+      named_insured: payload.named_insured,
+      retail_agent_name: payload.retail_agent_name,
+      retail_agency: payload.retail_agency,
+      carrier_name: payload.carrier_name ?? undefined,
+      original_request_type: payload.trigger_type,
+      days_since_original_request: elapsedDays,
+      carrier_acceptance_window_days: windowDays,
+      days_remaining_in_window: Math.max(windowDays - elapsedDays, 0),
+    };
+    runMutation.mutate({ trigger, label: "No-response follow-up" });
+  }
+
+  function importHandoffTrigger() {
+    if (!externalTrigger) return;
+    const base = {
+      submission_id: externalTrigger.submissionId || undefined,
+      named_insured: externalTrigger.insured || undefined,
+      carrier_name: externalTrigger.carrier || undefined,
+    };
+    let trigger: Record<string, unknown>;
+    if (externalTrigger.kind === "quote-summary") {
+      trigger = {
+        ...base,
+        trigger_type: "QUOTE_TERMS_SUMMARY",
+        source_workflow: "Quote Comparison",
+        quoted_terms: { premium: externalTrigger.premium, limits: "Not specified" },
+      };
+    } else if (externalTrigger.kind === "placement-confirmation") {
+      trigger = {
+        ...base,
+        trigger_type: "PLACEMENT_CONFIRMATION",
+        source_workflow: "Binder & Policy Issuance",
+        bound_terms: {
+          premium: externalTrigger.premium,
+          limits: "Not specified",
+          effective_date: "Not specified",
+        },
+      };
+    } else if (externalTrigger.kind === "policy-docs-delivered") {
+      trigger = {
+        ...base,
+        trigger_type: "POLICY_DOCUMENTS_DELIVERED",
+        source_workflow: "Binder & Policy Issuance",
+        binder_number: "Not specified",
+        verified_terms: `${externalTrigger.carrier} — ${externalTrigger.premium}`,
+      };
+    } else {
+      trigger = {
+        ...base,
+        trigger_type: "ENDORSEMENT_CONFIRMED",
+        source_workflow: "Endorsement Processing",
+        endorsement_number: "Not specified",
+        requested_change_detail: "Not specified",
+        issued_items: [],
+      };
+    }
+    runMutation.mutate({ trigger, label: TRIGGER_SOURCE_LABEL[externalTrigger.kind] });
+    setHandoffImported(true);
   }
 
   return (
@@ -2022,286 +1939,322 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
         title="Retail Agent Communication Copilot"
         description="AI drafts every retail-agent-facing email — status update, missing-info request, no-market notice, quote summary — you approve before it sends."
         actions={
-          <Button variant="primary">
+          <Button variant="primary" onClick={() => setNewEmailOpen((v) => !v)}>
             <MessageSquare className="h-4 w-4" />
             New email
           </Button>
         }
       />
 
-      <div className="grid gap-0 overflow-hidden rounded-2xl border border-border bg-background lg:grid-cols-[280px_minmax(0,1fr)_340px]">
+      {newEmailOpen && (
+        <div className="mt-4">
+          <Panel
+            title="Start a new communication"
+            subtitle="Runs the real backend pipeline — POST /api/es/agent-communication/run"
+            actions={
+              <Button variant="ghost" onClick={() => setNewEmailOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            <div className="flex flex-wrap gap-2">
+              {FIXTURE_TRIGGERS.map((t) => (
+                <Button
+                  key={t.ref}
+                  variant="secondary"
+                  disabled={runMutation.isPending}
+                  onClick={() => runMutation.mutate({ trigger: t.trigger, label: t.label })}
+                >
+                  {runMutation.isPending && runMutation.variables?.label === t.label ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {t.label}
+                </Button>
+              ))}
+            </div>
+            <div className="mt-3 text-[11px] text-muted-foreground">
+              Or select an existing thread on the left and use "Log outcome" / "Generate
+              follow-up" in the context panel to add a Quote/Terms Summary, Placement
+              Confirmation, or No-Response Follow-up to it.
+            </div>
+          </Panel>
+        </div>
+      )}
+
+      {externalTrigger && !handoffImported && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent/5 p-3 text-sm">
+          <div className="flex items-center gap-2">
+            <ArrowRight className="h-4 w-4 text-accent" />
+            Linked from {TRIGGER_SOURCE_LABEL[externalTrigger.kind]}
+            {externalTrigger.insured ? ` — ${externalTrigger.insured}` : ""}
+            {externalTrigger.carrier ? ` · ${externalTrigger.carrier}` : ""}
+            {externalTrigger.premium ? ` · ${externalTrigger.premium}` : ""}
+          </div>
+          <Button variant="primary" disabled={runMutation.isPending} onClick={importHandoffTrigger}>
+            {runMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Import this trigger
+          </Button>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-0 overflow-hidden rounded-2xl border border-border bg-background lg:grid-cols-[280px_minmax(0,1fr)_340px]">
         {/* Threads */}
         <div className="border-r border-border">
           <div className="border-b border-border p-3">
             <SearchBar placeholder="Search retail agents…" />
           </div>
-          <ul className="divide-y divide-border">
-            {copilotThreads.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setActive(t.id)}
-                className={`flex w-full flex-col gap-1 p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${active === t.id ? "bg-secondary/60" : "hover:bg-secondary/30"}`}
-              >
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>
-                    {t.agent} · {t.agency}
+          {listQuery.isLoading ? (
+            <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          ) : listQuery.isError ? (
+            <div className="flex items-center gap-2 p-4 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4" />
+              {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load."}
+            </div>
+          ) : items.length === 0 ? (
+            <div className="p-4 text-center text-sm text-muted-foreground">
+              No communications yet — click "New email" to draft one from a real trigger.
+            </div>
+          ) : (
+            <ul className="divide-y divide-border">
+              {items.map((row) => (
+                <button
+                  key={row.id}
+                  onClick={() => setSelectedId(row.id)}
+                  className={`flex w-full flex-col gap-1.5 p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${selectedId === row.id ? "bg-secondary/60" : "hover:bg-secondary/30"}`}
+                >
+                  <span className="truncate font-mono text-xs text-muted-foreground">
+                    {row.submission_id ?? row.id}
                   </span>
-                  <span>{t.when}</span>
-                </div>
-                <div className={`text-sm ${t.unread ? "font-semibold" : ""}`}>{t.subject}</div>
-                <div className="truncate text-[11px] text-muted-foreground">{t.snippet}</div>
-              </button>
-            ))}
-          </ul>
+                  <DraftStatusBadge status={row.status} />
+                </button>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* Conversation */}
         <div className="flex min-h-[520px] flex-col">
-          <div className="border-b border-border p-4">
-            <div className="text-xs text-muted-foreground">
-              To: {thread.agent} &lt;{thread.agent.toLowerCase().replace(" ", ".")}@
-              {thread.agency.toLowerCase().split(" ")[0]}.com&gt;
+          {!selectedId ? (
+            <div className="flex flex-1 items-center justify-center p-10 text-sm text-muted-foreground">
+              Select a thread, or click "New email" to draft one.
             </div>
-            <div className="font-serif text-lg">{thread.subject}</div>
-            <div className="mt-2 flex items-center gap-1.5 text-[11px]">
-              <Radar className="h-3 w-3 text-accent" />
-              <span className="text-muted-foreground">Triggered by:</span>
-              <span className="font-medium text-foreground">{displayTrigger.source}</span>
-              <span className="text-muted-foreground">— {displayTrigger.detail}</span>
-              {isTriggeredThread && (
-                <Chip tone="accent">
-                  <ArrowRight className="h-2.5 w-2.5" />
-                  Linked from{" "}
-                  {externalTrigger?.kind === "quote-summary"
-                    ? "Quote Comparison"
-                    : externalTrigger?.kind === "endorsement-confirmed"
-                      ? "Endorsement Processing"
-                      : "Binder & Issuance"}
-                </Chip>
-              )}
+          ) : detailQuery.isLoading ? (
+            <div className="flex flex-1 items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading draft…
             </div>
-          </div>
-
-          {thread.followUp && (
-            <div className="border-b border-border bg-secondary/30 p-3 text-[11px]">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  No-response follow-up monitor · {thread.followUp.carrier}'s acceptance window:{" "}
-                  {thread.followUp.window}
-                </span>
-                <Chip tone={thread.followUp.elapsed ? "warn" : "neutral"}>
-                  {thread.followUp.elapsed
-                    ? "Window elapsed — no reply"
-                    : "Within window — waiting"}
-                </Chip>
+          ) : detailQuery.isError ? (
+            <div className="flex flex-1 items-center justify-center gap-2 p-10 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4" />
+              {detailQuery.error instanceof Error
+                ? detailQuery.error.message
+                : "Failed to load draft."}
+            </div>
+          ) : !payload ? (
+            <div className="flex flex-1 items-center justify-center p-10 text-sm text-muted-foreground">
+              No draft data for this item.
+            </div>
+          ) : (
+            <>
+              <div className="border-b border-border p-4">
+                <div className="text-xs text-muted-foreground">
+                  To: {payload.retail_agent_name ?? "Retail agent"}
+                  {payload.retail_agency ? ` (${payload.retail_agency})` : ""}
+                </div>
+                <div className="font-serif text-lg">{payload.subject_line}</div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <Radar className="h-3 w-3 text-accent" />
+                  <span className="text-muted-foreground">Triggered by:</span>
+                  <span className="font-medium text-foreground">{payload.source_workflow}</span>
+                  <span className="text-muted-foreground">— {payload.trigger_type}</span>
+                  <DraftStatusBadge status={payload.status} />
+                </div>
               </div>
-              {!followUpSent[thread.id] ? (
-                <Button
-                  variant="secondary"
-                  className="mt-2 !py-1 !text-xs"
-                  disabled={!thread.followUp.elapsed}
-                  title={
-                    !thread.followUp.elapsed
-                      ? "Still within the carrier's acceptance window"
-                      : undefined
-                  }
-                  onClick={generateFollowUp}
-                >
-                  Generate follow-up (broker still approves — 1 max)
-                </Button>
+
+              {gated && (
+                <div className="border-b border-border bg-warn/10 p-3 text-[11px]">
+                  <div className="flex items-start gap-2">
+                    <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warn" />
+                    <div>
+                      <b>Requires compliance review</b> — carrier names are withheld until a
+                      senior/admin clears this (RA-TN-06). This banner stays until cleared.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex-1 space-y-4 overflow-y-auto p-4 text-sm">
+                <Bubble from="you" name="Coverline AI · drafted" at="" ai>
+                  {payload.body}
+                  {payload.grounding_citations.length > 0 && (
+                    <div className="mt-2 text-[11px] text-muted-foreground">
+                      Grounded in:{" "}
+                      {payload.grounding_citations
+                        .map((c) => `${c.claim} (${c.source_field})`)
+                        .join("; ")}
+                    </div>
+                  )}
+                  <div className="mt-2 flex items-center gap-2 text-[11px]">
+                    <span className="text-muted-foreground">Carrier names disclosed:</span>
+                    {payload.carrier_names_disclosed ? (
+                      <Chip tone="success">
+                        Yes{payload.carrier_name ? ` — ${payload.carrier_name}` : ""}
+                      </Chip>
+                    ) : (
+                      <Chip tone="neutral">No — aggregate framing only</Chip>
+                    )}
+                  </div>
+                </Bubble>
+              </div>
+
+              <div className="border-t border-border p-3">
+                <div className="rounded-xl border border-border bg-background p-2">
+                  <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <FoundationBadge kind="matching" />
+                    <span>Edit locally, then Copy to paste into your own email client</span>
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={composeText}
+                    onChange={(e) => setComposeText(e.target.value)}
+                    className="w-full resize-none rounded bg-transparent p-2 text-sm outline-none"
+                  />
+                  <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
+                    <div className="flex items-start gap-1.5 text-[10px] text-muted-foreground">
+                      <Lock className="mt-0.5 h-3 w-3 shrink-0" />
+                      Nothing here transmits automatically — approve/send are manual logs only
+                      (FR-20). Send is senior/admin-only, enforced server-side — expect a 403
+                      toast here with the seeded junior demo user; Approve/Edit/Discard work for
+                      any role.
+                    </div>
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                      <Button variant="ghost" onClick={copyDraft}>
+                        <Copy className="h-3.5 w-3.5" />
+                        Copy draft
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={actionMutation.isPending}
+                        onClick={() => {
+                          actionMutation.mutate("edit");
+                          toast("Logged as edited — remember to Copy the updated text above");
+                        }}
+                      >
+                        Log edit
+                      </Button>
+                      {gated && (
+                        <Button
+                          variant="secondary"
+                          disabled={clearMutation.isPending}
+                          onClick={() => clearMutation.mutate()}
+                        >
+                          {clearMutation.isPending && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          )}
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          Compliance-clear (senior/admin)
+                        </Button>
+                      )}
+                      <Button
+                        variant="primary"
+                        disabled={gated || actionMutation.isPending}
+                        title={gated ? "Requires compliance-clear first" : undefined}
+                        onClick={() => actionMutation.mutate("send")}
+                      >
+                        Send <Send className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="danger"
+                        disabled={actionMutation.isPending}
+                        onClick={() => actionMutation.mutate("discard")}
+                      >
+                        Discard
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Context + real communication history */}
+        <div className="space-y-5 border-l border-border p-4">
+          {payload && (
+            <div>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Context behind this draft
+              </div>
+              <div className="space-y-2 rounded-lg border border-border p-3 text-[11px]">
+                <div className="flex items-center gap-1.5">
+                  <Building2 className="h-3 w-3 text-muted-foreground" />
+                  <span className="font-medium">{payload.named_insured ?? "Unknown insured"}</span>
+                </div>
+                <div className="text-muted-foreground">
+                  Agent: {payload.retail_agent_name ?? "—"}
+                  {payload.retail_agency ? ` (${payload.retail_agency})` : ""}
+                </div>
+                <div className="text-muted-foreground">
+                  Submission: {payload.submission_id ?? "—"}
+                </div>
+                <div className="text-muted-foreground">
+                  Generated: {new Date(payload.generated_timestamp).toLocaleString()}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {payload && (
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Other communications, same submission
+                </div>
+                <FoundationBadge kind="matching" />
+              </div>
+              {relatedItems.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border p-3 text-[11px] text-muted-foreground">
+                  None yet.
+                </div>
               ) : (
-                <div className="mt-2 flex items-center gap-1.5 text-success">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Follow-up generated — added to Suggested drafts
+                <div className="space-y-2">
+                  {relatedItems.map((row) => (
+                    <button
+                      key={row.id}
+                      onClick={() => setSelectedId(row.id)}
+                      className="w-full rounded-lg border border-border p-2 text-left text-[11px] hover:bg-secondary/30"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>{row.id}</span>
+                        <DraftStatusBadge status={row.status} />
+                      </div>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
           )}
 
-          <div className="flex-1 space-y-4 overflow-y-auto p-4 text-sm">
-            <Bubble from="ana" name={thread.agent} at="8:12 AM">
-              Hi team — sending over {thread.subject.split(" — ")[0]}. Any early read on this one?
-            </Bubble>
-            {messages.map((m, i) => (
-              <Bubble
-                key={m.id}
-                from="you"
-                name="Coverline AI · drafted"
-                at={i === 0 ? "8:14 AM" : "8:42 AM"}
-                ai
-              >
-                {m.body}
-                {thread.groundedIn && (
-                  <div className="mt-2">
-                    <SourceCitation doc={thread.groundedIn.doc} page={thread.groundedIn.page}>
-                      Grounded in {thread.groundedIn.doc} p.{thread.groundedIn.page} — no fabricated
-                      specifics
-                    </SourceCitation>
-                  </div>
-                )}
-                {m.id === "m2" && (
-                  <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
-                    <Lock className="h-3 w-3" /> Carrier-name disclosure gate —
-                    compliance-controlled, cannot be bypassed from this draft.
-                  </div>
-                )}
-                <div className="mt-2 flex items-center gap-2 text-xs">
-                  {m.sentAt ? (
-                    <Chip tone="success">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Sent {m.sentAt}
-                    </Chip>
-                  ) : (
-                    <>
-                      <Button
-                        variant="ghost"
-                        disabled={m.regenerating}
-                        onClick={() => regenerateMessage(m.id)}
-                      >
-                        {m.regenerating ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          "Regenerate"
-                        )}
-                      </Button>
-                      <Button variant="secondary" onClick={() => editMessage(m.id)}>
-                        Edit
-                      </Button>
-                      <Button variant="primary" onClick={() => sendMessage(m.id)}>
-                        Send <Send className="h-3 w-3" />
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </Bubble>
-            ))}
-          </div>
-          <div className="border-t border-border p-3">
-            <div className="rounded-xl border border-border bg-background p-2">
-              <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                <FoundationBadge kind="extraction" />
-                <span>·</span>
-                <span>AI writer will cite the SOV and loss run in your reply</span>
-              </div>
-              <textarea
-                rows={3}
-                value={composeText}
-                onChange={(e) => setComposeText(e.target.value)}
-                className="w-full resize-none rounded bg-transparent p-2 text-sm outline-none"
-              />
-              <div className="flex items-center gap-2 border-t border-border pt-2">
-                <Button variant="ghost">
-                  <Paperclip className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost">
-                  <Sparkles className="h-4 w-4" />
-                  Improve
-                </Button>
-                <Button variant="ghost">Rewrite tone</Button>
-                <div className="ml-auto">
-                  <Button variant="primary" onClick={sendCompose}>
-                    Send <Send className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Context + AI drafts */}
-        <div className="space-y-5 border-l border-border p-4">
-          <div>
-            <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Context behind this draft
-            </div>
-            <div className="space-y-2 rounded-lg border border-border p-3 text-[11px]">
-              <div className="flex items-center gap-1.5">
-                <Building2 className="h-3 w-3 text-muted-foreground" />
-                <span className="font-medium">{thread.agency}</span>
-              </div>
-              {relationship ? (
-                <div className="text-muted-foreground">
-                  Relationship: {thread.tenureYears} years · {relationship.submissions} submissions
-                  · {relationship.bound} bound · {relationship.hitRate} hit rate · avg response{" "}
-                  {relationship.avgResponseTime}
-                </div>
-              ) : (
-                <div className="text-muted-foreground">
-                  Relationship: {thread.tenureYears} years on file
-                </div>
-              )}
-              <div className="text-muted-foreground">
-                Thread history: {messages.length + 1} messages · last reply {thread.when}
-              </div>
-              {thread.followUp && (
-                <div className="text-muted-foreground">
-                  Carrier acceptance window: {thread.followUp.carrier} · {thread.followUp.window}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Suggested drafts
-              </div>
-              <FoundationBadge kind="matching" />
-            </div>
-            <div className="space-y-3">
-              {drafts.map((d) => (
-                <div key={d.id} className="rounded-lg border border-border p-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <div className="font-medium">{d.title}</div>
-                    <Chip tone="accent">{d.tone}</Chip>
-                  </div>
-                  {d.noMarketRule && (
-                    <div
-                      className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground"
-                      title="No carrier names disclosed in aggregate-framed no-market notices, pending compliance resolution"
-                    >
-                      <ShieldAlert className="h-3 w-3" />
-                      Aggregate framing · Rule RA-TN-06 · pending compliance resolution
-                    </div>
-                  )}
-                  <p className="mt-1.5 line-clamp-3 text-[11px] text-muted-foreground">{d.body}</p>
-                  <div className="mt-2 flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      className="!py-1 !text-xs"
-                      onClick={() => toast(d.title, { description: d.body })}
-                    >
-                      Preview
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="!py-1 !text-xs"
-                      onClick={() => applyDraft(d.id)}
-                    >
-                      Use draft
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
           <div className="rounded-lg border border-dashed border-border p-3 text-[11px]">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">
-                Manual fallback — use this when a quote/bind outcome didn't come through Quote
-                Comparison automatically.
+                Manual fallback — log a quote/bind outcome that didn't come through Quote
+                Comparison automatically (FR-2).
               </span>
               <Button
                 variant="ghost"
                 className="!py-1 !text-xs"
-                onClick={() => setManualTriggerOpen((v) => !v)}
+                disabled={!payload}
+                title={!payload ? "Select a thread first" : undefined}
+                onClick={() => setManualOpen((v) => !v)}
               >
-                {manualTriggerOpen ? "Cancel" : "Log outcome"}
+                {manualOpen ? "Cancel" : "Log outcome"}
               </Button>
             </div>
-            {manualTriggerOpen && (
+            {manualOpen && payload && (
               <div className="mt-2 space-y-2">
                 <input
                   value={manualCarrier}
@@ -2325,13 +2278,79 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
                     <option value="Bound">Bound</option>
                   </select>
                 </div>
+                {manualOutcome === "Quoted" && (
+                  <textarea
+                    rows={2}
+                    value={manualContext}
+                    onChange={(e) => setManualContext(e.target.value)}
+                    placeholder="Pricing context / reason (optional, e.g. elevated severity from prior claims)"
+                    className="w-full resize-none rounded border border-border bg-background p-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                )}
                 <Button
                   variant="primary"
                   className="w-full justify-center !py-1 !text-xs"
-                  disabled={!manualCarrier.trim() || !manualPremium.trim()}
-                  onClick={logManualTrigger}
+                  disabled={
+                    !manualCarrier.trim() || !manualPremium.trim() || runMutation.isPending
+                  }
+                  onClick={runManualTrigger}
                 >
                   Log &amp; draft
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-dashed border-border p-3 text-[11px]">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">
+                No-response follow-up — draft one more nudge if the agent hasn't replied within
+                the carrier's acceptance window (FR-11/FR-12, at most one per thread).
+              </span>
+              <Button
+                variant="ghost"
+                className="!py-1 !text-xs"
+                disabled={!payload}
+                title={!payload ? "Select a thread first" : undefined}
+                onClick={() => setFollowUpOpen((v) => !v)}
+              >
+                {followUpOpen ? "Cancel" : "Generate follow-up"}
+              </Button>
+            </div>
+            {followUpOpen && payload && (
+              <div className="mt-2 space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    value={followUpWindowDays}
+                    onChange={(e) => setFollowUpWindowDays(e.target.value)}
+                    placeholder="Carrier's acceptance window (days)"
+                    className="flex-1 rounded border border-border bg-background p-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    value={followUpElapsedDays}
+                    onChange={(e) => setFollowUpElapsedDays(e.target.value)}
+                    placeholder="Days since original request"
+                    className="flex-1 rounded border border-border bg-background p-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  Days remaining in window:{" "}
+                  {Math.max(
+                    (Number(followUpWindowDays) || 0) - (Number(followUpElapsedDays) || 0),
+                    0,
+                  )}
+                </div>
+                <Button
+                  variant="primary"
+                  className="w-full justify-center !py-1 !text-xs"
+                  disabled={runMutation.isPending}
+                  onClick={runFollowUp}
+                >
+                  Generate follow-up
                 </Button>
               </div>
             )}
@@ -2342,31 +2361,32 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
       <div className="mt-5">
         <Panel
           title="Activity"
-          subtitle="Draft generated, broker edits, and send timestamps — same feedback-loop pattern as other workflows"
+          subtitle="Real actions this session — draft generated, edits logged, sends, compliance-clears (not yet a persisted history view)"
           actions={<FoundationBadge kind="matching" />}
         >
           <ul className="divide-y divide-border">
-            {log.slice(0, 8).map((d, i) => (
-              <li key={i} className="flex items-start gap-3 py-3 text-sm">
-                <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
-                <div className="flex-1">
-                  <div>
-                    <b>{d.who}</b> — {d.what}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
-                </div>
-                {d.conf !== "—" && <Chip tone="neutral">{d.conf}</Chip>}
+            {log.length === 0 ? (
+              <li className="py-6 text-center text-sm text-muted-foreground">
+                No activity yet this session.
               </li>
-            ))}
+            ) : (
+              log.slice(0, 8).map((d, i) => (
+                <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                  <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                    {d.at}
+                  </span>
+                  <div className="flex-1">
+                    <div>
+                      <b>{d.who}</b> — {d.what}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                  </div>
+                </li>
+              ))
+            )}
           </ul>
-          <div className="mt-3 text-[10px] text-muted-foreground">
-            Session-only for this prototype — feeds the same Feedback/Eval store pattern as other
-            workflows, not yet persisted.
-          </div>
         </Panel>
       </div>
-
-      <LiveDraftsSection />
     </div>
   );
 }
@@ -2378,353 +2398,25 @@ const AGENT_ACTION_LABEL: Record<AgentCommActionVerb, string> = {
   discard: "Discard",
 };
 
+// Handles two different status vocabularies from the backend: the review-item-level
+// ReviewStatus (lowercase — pending/approved/escalated/sent/issued, used by the thread list)
+// and the richer payload-level DraftCommunicationOut.status (uppercase — DRAFT/
+// UNDER_COMPLIANCE_REVIEW/APPROVED/SENT/DISCARDED, used in the detail view). Note the list's
+// ReviewStatus has no "discarded" value, so a discarded item's list row still shows "Pending"
+// — that's a real backend characteristic, not something the frontend can correct.
 function DraftStatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; tone: "success" | "warn" | "danger" | "neutral" }> = {
+    PENDING: { label: "Pending", tone: "neutral" },
     DRAFT: { label: "Draft", tone: "neutral" },
     UNDER_COMPLIANCE_REVIEW: { label: "Under compliance review", tone: "warn" },
     APPROVED: { label: "Approved", tone: "success" },
+    ESCALATED: { label: "Escalated", tone: "warn" },
     SENT: { label: "Sent", tone: "success" },
+    ISSUED: { label: "Issued", tone: "success" },
     DISCARDED: { label: "Discarded", tone: "danger" },
   };
-  const { label, tone } = map[status] ?? { label: status, tone: "neutral" as const };
+  const { label, tone } = map[status.toUpperCase()] ?? { label: status, tone: "neutral" as const };
   return <Chip tone={tone}>{label}</Chip>;
-}
-
-function LiveDraftCard({
-  itemId,
-  payload,
-  onActed,
-}: {
-  itemId: string;
-  payload: DraftCommunicationOut;
-  onActed: (who: string, what: string, ctx: string) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [pendingAction, setPendingAction] = useState<AgentCommActionVerb | null>(null);
-  const [pendingClear, setPendingClear] = useState(false);
-  const gated = payload.requires_compliance_review;
-  const who = payload.named_insured ?? payload.submission_id ?? itemId;
-
-  const actionMutation = useMutation({
-    mutationFn: (action: AgentCommActionVerb) => actOnAgentCommunication(itemId, action),
-    onMutate: (action: AgentCommActionVerb) => setPendingAction(action),
-    onSuccess: (item, action) => {
-      onActed(
-        "You",
-        `${AGENT_ACTION_LABEL[action]} — POST /api/es/agent-communication/${itemId}/${action}`,
-        `${who} → status "${item.status}"`,
-      );
-      toast.success(`${AGENT_ACTION_LABEL[action]} succeeded`);
-      queryClient.invalidateQueries({ queryKey: ["agent-communication"] });
-    },
-    onError: (err: unknown, action) => {
-      toast.error(err instanceof Error ? err.message : `${AGENT_ACTION_LABEL[action]} failed`);
-    },
-    onSettled: () => setPendingAction(null),
-  });
-
-  const clearMutation = useMutation({
-    mutationFn: () => complianceClear(itemId),
-    onMutate: () => setPendingClear(true),
-    onSuccess: () => {
-      onActed(
-        "You",
-        `Compliance-clear — POST /api/es/agent-communication/${itemId}/compliance-clear`,
-        who,
-      );
-      toast.success("Compliance gate cleared");
-      queryClient.invalidateQueries({ queryKey: ["agent-communication"] });
-    },
-    onError: (err: unknown) => {
-      toast.error(
-        err instanceof Error ? err.message : "Compliance-clear failed (senior/admin only)",
-      );
-    },
-    onSettled: () => setPendingClear(false),
-  });
-
-  return (
-    <Panel>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-serif text-xl">{payload.subject_line}</h3>
-            <DraftStatusBadge status={payload.status} />
-          </div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            {payload.trigger_type} · {who}
-            {payload.retail_agent_name
-              ? ` · ${payload.retail_agent_name} (${payload.retail_agency})`
-              : ""}
-          </div>
-        </div>
-        <FoundationBadge kind="matching" />
-      </div>
-
-      {gated && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-warn/40 bg-warn/10 p-3">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-          <div className="text-[12px] text-foreground">
-            <b>Requires compliance review</b> — carrier names are withheld until a senior/admin
-            clears this (RA-TN-06). This banner stays until cleared.
-          </div>
-        </div>
-      )}
-
-      <div className="mt-4 flex items-center gap-2 text-[11px]">
-        <span className="text-muted-foreground">Carrier names disclosed:</span>
-        {payload.carrier_names_disclosed ? (
-          <Chip tone="success">
-            <CheckCircle2 className="h-2.5 w-2.5" />
-            Yes{payload.carrier_name ? ` — ${payload.carrier_name}` : ""}
-          </Chip>
-        ) : (
-          <Chip tone="neutral">No — aggregate framing only</Chip>
-        )}
-      </div>
-
-      <div className="mt-4 whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-sm">
-        {payload.body}
-      </div>
-
-      {payload.grounding_citations.length > 0 && (
-        <div className="mt-2 text-[11px] text-muted-foreground">
-          Grounded in:{" "}
-          {payload.grounding_citations.map((c) => `${c.claim} (${c.source_field})`).join("; ")}
-        </div>
-      )}
-
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-secondary/30 p-3">
-        <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
-          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Nothing here transmits automatically — approve/send are manual logs only (FR-20).
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {gated && (
-            <Button
-              variant="secondary"
-              disabled={pendingClear}
-              onClick={() => clearMutation.mutate()}
-            >
-              {pendingClear && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Compliance-clear (senior/admin)
-            </Button>
-          )}
-          <Button
-            variant="primary"
-            disabled={gated || actionMutation.isPending}
-            title={gated ? "Requires compliance-clear first" : undefined}
-            onClick={() => actionMutation.mutate("approve")}
-          >
-            {pendingAction === "approve" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Approve
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={gated || actionMutation.isPending}
-            title={gated ? "Requires compliance-clear first" : undefined}
-            onClick={() => actionMutation.mutate("send")}
-          >
-            {pendingAction === "send" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Mark as sent
-          </Button>
-          <Button
-            variant="danger"
-            disabled={actionMutation.isPending}
-            onClick={() => actionMutation.mutate("discard")}
-          >
-            {pendingAction === "discard" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Discard
-          </Button>
-        </div>
-      </div>
-    </Panel>
-  );
-}
-
-function LiveDraftsSection() {
-  const queryClient = useQueryClient();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [log, setLog] = useState<LogEntry[]>([]);
-
-  const listQuery = useQuery({
-    queryKey: ["agent-communication", "list"],
-    queryFn: listAgentCommunication,
-  });
-  const items = listQuery.data ?? [];
-
-  const detailQuery = useQuery({
-    queryKey: ["agent-communication", "detail", selectedId],
-    queryFn: () => getAgentCommunication(selectedId!),
-    enabled: Boolean(selectedId),
-  });
-
-  function appendLog(who: string, what: string, ctx: string) {
-    setLog((prev) => [
-      {
-        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        who,
-        what,
-        ctx,
-        conf: "—",
-      },
-      ...prev,
-    ]);
-  }
-
-  const runMutation = useMutation({
-    mutationFn: (t: FixtureTrigger) => runAgentCommunication(t.trigger),
-    onSuccess: (item, t) => {
-      queryClient.invalidateQueries({ queryKey: ["agent-communication"] });
-      toast.success(
-        item.deduplicated
-          ? `${t.label}: existing draft reused (deduplicated, FR-5)`
-          : `${t.label}: draft generated`,
-      );
-      setSelectedId(item.id);
-    },
-    onError: (err: unknown, t) => {
-      toast.error(err instanceof Error ? err.message : `Failed to draft "${t.label}"`);
-    },
-  });
-
-  return (
-    <div className="mt-6 space-y-5">
-      <Panel
-        title="Live drafts — wired to Backend-AI-OS"
-        subtitle="/api/es/agent-communication — real Workflow_12 fixture triggers (the threads above stay mocked, including hand-offs from Quote Comparison/Binder & Issuance/Endorsement Processing)"
-      >
-        <div className="flex flex-wrap gap-2">
-          {FIXTURE_TRIGGERS.map((t) => (
-            <Button
-              key={t.ref}
-              variant="secondary"
-              disabled={runMutation.isPending}
-              onClick={() => runMutation.mutate(t)}
-            >
-              {runMutation.isPending && runMutation.variables?.ref === t.ref ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {t.label}
-            </Button>
-          ))}
-        </div>
-      </Panel>
-
-      {listQuery.isLoading && (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading drafted communications…
-        </div>
-      )}
-      {listQuery.isError && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4" />
-          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load drafts."}
-        </div>
-      )}
-
-      {!listQuery.isLoading && !listQuery.isError && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
-          <Panel title="Drafted communications" subtitle={`${items.length} generated`}>
-            {items.length === 0 ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">
-                No drafts yet — run a trigger above.
-              </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {items.map((row) => (
-                  <button
-                    key={row.id}
-                    onClick={() => setSelectedId(row.id)}
-                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
-                      selectedId === row.id ? "bg-secondary/50" : ""
-                    }`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <span className="truncate font-mono text-sm">
-                        {row.submission_id ?? row.id}
-                      </span>
-                      <div className="mt-1.5">
-                        <Chip>{row.status}</Chip>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </Panel>
-
-          <div className="space-y-5">
-            {!selectedId ? (
-              <Panel>
-                <div className="py-10 text-center text-sm text-muted-foreground">
-                  Select a draft from the list.
-                </div>
-              </Panel>
-            ) : detailQuery.isLoading ? (
-              <Panel>
-                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading draft…
-                </div>
-              </Panel>
-            ) : detailQuery.isError ? (
-              <Panel>
-                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  {detailQuery.error instanceof Error
-                    ? detailQuery.error.message
-                    : "Failed to load draft."}
-                </div>
-              </Panel>
-            ) : detailQuery.data?.payload ? (
-              <LiveDraftCard
-                itemId={detailQuery.data.id}
-                payload={detailQuery.data.payload}
-                onActed={appendLog}
-              />
-            ) : (
-              <Panel>
-                <div className="py-10 text-center text-sm text-muted-foreground">
-                  No draft data for this item.
-                </div>
-              </Panel>
-            )}
-
-            <Panel
-              title="Activity (live section)"
-              subtitle="This session's real actions"
-              actions={<FoundationBadge kind="matching" />}
-            >
-              <ul className="divide-y divide-border">
-                {log.length === 0 ? (
-                  <li className="py-6 text-center text-sm text-muted-foreground">
-                    No activity yet this session.
-                  </li>
-                ) : (
-                  log.slice(0, 10).map((d, i) => (
-                    <li key={i} className="flex items-start gap-3 py-3 text-sm">
-                      <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                        {d.at}
-                      </span>
-                      <div className="flex-1">
-                        <div>
-                          <b>{d.who}</b> — {d.what}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
-                      </div>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </Panel>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 }
 
 function Bubble({
@@ -2792,137 +2484,66 @@ function daysUntil(dateStr: string): number | null {
   return Math.ceil((target.getTime() - MOCK_TODAY.getTime()) / 86_400_000);
 }
 
-function parsePremium(str: string): number | null {
-  const n = Number(str.replace(/[^0-9.]/g, ""));
-  return str === "—" || isNaN(n) ? null : n;
-}
-
-const MATERIALITY_RANK = { Standard: 0, Material: 1, "Deal-breaker": 2 } as const;
-
-function ValidityChip({ dateStr }: { dateStr: string }) {
-  const days = daysUntil(dateStr);
-  if (days === null) return <span className="text-muted-foreground">—</span>;
-  if (days < 0)
-    return (
-      <Chip tone="danger">
-        <XCircle className="h-2.5 w-2.5" />
-        Expired {Math.abs(days)}d ago
-      </Chip>
-    );
-  if (days <= 3)
-    return (
-      <Chip tone="danger">
-        <AlertTriangle className="h-2.5 w-2.5" />
-        Expires in {days}d
-      </Chip>
-    );
-  if (days <= 7)
-    return (
-      <Chip tone="warn">
-        <Clock className="h-2.5 w-2.5" />
-        Expires in {days}d
-      </Chip>
-    );
-  return (
-    <Chip tone="success">
-      <Clock className="h-2.5 w-2.5" />
-      Expires in {days}d
-    </Chip>
-  );
-}
-
 export function QuoteComparison() {
-  const navigate = useNavigate();
-  const responded = quotes.filter((q) => q.status !== "Declined").length;
-  const liveQuotes = quotes.filter((q) => q.status !== "Declined");
-  const declinedQuotes = quotes.filter((q) => q.status === "Declined");
-
-  // QC-06: a genuine trade-off only exists if no quote dominates every other
-  // quote on both premium and subjectivity burden. Computed, not defaulted —
-  // if one quote is both cheaper and lower-materiality, that's a single clear
-  // recommendation, not a multi-option choice.
-  function dominates(a: (typeof quotes)[number], b: (typeof quotes)[number]) {
-    const aPrem = parsePremium(a.premium);
-    const bPrem = parsePremium(b.premium);
-    if (aPrem === null || bPrem === null) return false;
-    const aRank = MATERIALITY_RANK[a.materiality];
-    const bRank = MATERIALITY_RANK[b.materiality];
-    return aPrem <= bPrem && aRank <= bRank && (aPrem < bPrem || aRank < bRank);
-  }
-  const dominantQuote = liveQuotes.find((a) => liveQuotes.every((b) => a === b || dominates(a, b)));
-  const outputMode: "single" | "tradeoff" =
-    liveQuotes.length <= 1 || dominantQuote ? "single" : "tradeoff";
-  const urgentQuotes = liveQuotes.filter((q) => {
-    const d = daysUntil(q.validUntil);
-    return d !== null && d <= 3;
-  });
-
-  const [log, setLog] = useState<LogEntry[]>(() => [
-    {
-      at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      who: "AI (Matching/Ranking Core)",
-      what: `Comparison output produced — ${liveQuotes.length} quote${liveQuotes.length === 1 ? "" : "s"}, ${declinedQuotes.length} declination${declinedQuotes.length === 1 ? "" : "s"} · mode: ${outputMode === "single" ? "single primary recommendation" : "multi-option trade-off"}`,
-      ctx: "SUB-24016 · Highline Hospitality Group",
-      conf: "94%",
-    },
-  ]);
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newComparisonOpen, setNewComparisonOpen] = useState(false);
+  const [log, setLog] = useState<LogEntry[]>([]);
   const [bindOutcome, setBindOutcome] = useState<string | null>(null);
 
-  function appendLog(who: string, what: string, ctx: string, conf = "—") {
+  function appendLog(who: string, what: string, ctx: string) {
     setLog((prev) => [
       {
         at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         who,
         what,
         ctx,
-        conf,
+        conf: "—",
       },
       ...prev,
     ]);
   }
 
-  function presentToAgent() {
-    appendLog(
-      "Sam D. (Broker)",
-      "Presented James River Insurance to retail agent — handed off to Retail Agent Copilot",
-      "SUB-24016 · Highline Hospitality Group",
-    );
-    navigate({
-      to: "/app/workflows/$slug",
-      params: { slug: "agent-copilot" },
-      search: {
-        trigger: "quote-summary",
-        carrier: "James River Insurance",
-        premium: "$421,000",
-        submissionId: "SUB-24016",
-      },
-    });
-  }
+  const listQuery = useQuery({
+    queryKey: ["quote-comparison", "list"],
+    queryFn: listQuoteComparison,
+  });
+  const items = listQuery.data ?? [];
 
-  function requestRevised() {
-    appendLog(
-      "Sam D. (Broker)",
-      "Requested revised terms from carriers",
-      "SUB-24016 · Highline Hospitality Group",
-    );
-    toast("Logged — following up with carriers is out of scope for automation in v1");
-  }
+  useEffect(() => {
+    if (!selectedId && listQuery.data && listQuery.data.length > 0) {
+      setSelectedId(listQuery.data[0].id);
+    }
+  }, [listQuery.data, selectedId]);
 
-  function declineAllRemarket() {
-    appendLog(
-      "Sam D. (Broker)",
-      "Declined all quotes — remarketing",
-      "SUB-24016 · Highline Hospitality Group",
-    );
-    toast("Logged — remarket via Market Matching or Renewal Remarketing");
-  }
+  const detailQuery = useQuery({
+    queryKey: ["quote-comparison", "detail", selectedId],
+    queryFn: () => getQuoteComparison(selectedId!),
+    enabled: Boolean(selectedId),
+    refetchOnWindowFocus: true, // urgency is recomputed against today on every GET
+  });
+  const payload = detailQuery.data?.payload ?? null;
 
-  function recordBindOutcome(outcome: "Bound" | "Lost to another market") {
+  const runMutation = useMutation({
+    mutationFn: (s: FixtureScenario) => runQuoteComparison(s.ref),
+    onSuccess: (item, s) => {
+      queryClient.invalidateQueries({ queryKey: ["quote-comparison"] });
+      toast.success(`${s.label}: comparison generated`);
+      appendLog("AI (Matching/Ranking Core)", "Comparison generated", s.label);
+      setSelectedId(item.id);
+      setNewComparisonOpen(false);
+    },
+    onError: (err: unknown, s) => {
+      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`);
+    },
+  });
+
+  function recordBindOutcome(outcome: string) {
     setBindOutcome(outcome);
     appendLog(
-      "Sam D. (Broker)",
+      "You",
       `Recorded eventual outcome — ${outcome}`,
-      "SUB-24016 · Highline Hospitality Group",
+      payload?.named_insured ?? payload?.submission_id ?? "this comparison",
     );
   }
 
@@ -2933,9 +2554,9 @@ export function QuoteComparison() {
         title="Quote Comparison & Recommendation"
         description="Carrier quote and declination emails ingested, terms normalized to one schema, subjectivities classified by materiality — with a drafted recommendation."
         actions={
-          <Button variant="primary">
+          <Button variant="primary" onClick={() => setNewComparisonOpen((v) => !v)}>
             <Send className="h-4 w-4" />
-            Send comparison to agent
+            New comparison
           </Button>
         }
       />
@@ -2944,16 +2565,15 @@ export function QuoteComparison() {
         <ProcessAnim
           steps={[
             {
-              label: "3 carrier response emails ingested · Highline Hospitality Group",
+              label: "Carrier response emails ingested and classified (quote vs. declination)",
               kind: "extraction",
             },
             {
-              label: "Premium, deductible, and limit terms normalized to one schema",
+              label: "Premium, deductible, limit, and endorsement terms normalized to one schema",
               kind: "extraction",
             },
             {
-              label:
-                "Subjectivities classified by materiality (Standard / Material / Deal-breaker)",
+              label: "Subjectivities extracted individually and classified by materiality (QC-02)",
               kind: "matching",
             },
             {
@@ -2966,258 +2586,183 @@ export function QuoteComparison() {
                 "Validity windows tracked against today (QC-07) · output mode computed, not defaulted (QC-06)",
               kind: "matching",
             },
-            { label: "Recommendation drafted — 94% confidence", kind: "matching" },
+            { label: "Recommendation drafted, grounded in the extracted terms", kind: "matching" },
           ]}
         />
       </div>
 
-      {urgentQuotes.length > 0 && (
-        <div className="mb-5 flex items-start gap-2 rounded-xl border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <div>
-            <b>Validity urgency (QC-07):</b> {urgentQuotes.map((q) => q.carrier).join(", ")}{" "}
-            expiring within 3 days — this tracking runs on every quote regardless of whether a
-            multi-quote comparison exists.
-          </div>
+      {newComparisonOpen && (
+        <div className="mb-5">
+          <Panel
+            title="Start a new comparison"
+            subtitle="Runs the real backend pipeline — POST /api/es/quote-comparison/run"
+            actions={
+              <Button variant="ghost" onClick={() => setNewComparisonOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            <div className="flex flex-wrap gap-2">
+              {QUOTE_FIXTURE_SCENARIOS.map((s) => (
+                <Button
+                  key={s.ref}
+                  variant="secondary"
+                  disabled={runMutation.isPending}
+                  onClick={() => runMutation.mutate(s)}
+                >
+                  {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {s.label}
+                </Button>
+              ))}
+            </div>
+          </Panel>
         </div>
       )}
 
-      <div
-        className={`mb-5 rounded-xl border p-3 text-sm ${outputMode === "single" ? "border-success/30 bg-success/5" : "border-warn/30 bg-warn/5"}`}
-      >
-        <div className="flex items-center gap-2 font-medium">
-          {outputMode === "single" ? (
-            <CheckCircle2 className="h-4 w-4 text-success" />
-          ) : (
-            <Info className="h-4 w-4 text-warn" />
-          )}
-          Output mode (QC-06):{" "}
-          {outputMode === "single" ? "Single primary recommendation" : "Multi-option trade-off"}
+      {listQuery.isLoading && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading comparisons…
         </div>
-        <p className="mt-1 text-[12px] text-muted-foreground">
-          {outputMode === "single"
-            ? `Computed, not defaulted — ${dominantQuote?.carrier} dominates on both premium and subjectivity burden (QC-01), so no genuine trade-off exists here.`
-            : "Computed, not defaulted — no quote dominates on both premium and subjectivity burden, so this is presented as an explicit multi-option choice."}
-        </p>
-      </div>
+      )}
+      {listQuery.isError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          {listQuery.error instanceof Error
+            ? listQuery.error.message
+            : "Failed to load comparisons."}
+        </div>
+      )}
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <MetricTile
-          label="Markets responded"
-          value={`${responded} of ${quotes.length}`}
-          sub="1 declined — Ategrity Specialty"
-          tone="success"
-        />
-        <MetricTile label="Premium spread" value="$27,500" sub="$421,000 – $448,500" tone="warn" />
-        <MetricTile
-          label="Recommended carrier"
-          value="James River"
-          sub="Lowest premium, standard subjectivities only"
-          tone="success"
-        />
-      </div>
-
-      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <Panel
-          title="Normalized quote comparison"
-          subtitle="Highline Hospitality Group · SUB-24016"
-          actions={<FoundationBadge kind="matching" />}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="py-2 text-left">Carrier</th>
-                  <th className="py-2 text-right">Premium</th>
-                  <th className="py-2 text-right">Deductible</th>
-                  <th className="py-2 text-left pl-4">Limit</th>
-                  <th className="py-2 text-left pl-4">Endorsements</th>
-                  <th className="py-2 text-left pl-4">Effective</th>
-                  <th className="py-2 text-left pl-4">Subjectivities</th>
-                  <th className="py-2 text-left pl-4">Materiality</th>
-                  <th className="py-2 text-left pl-4">Valid until</th>
-                  <th className="py-2 text-left pl-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {quotes.map((q) => (
-                  <tr
-                    key={q.carrier}
-                    className={`transition-colors hover:bg-secondary/40 ${q.status === "Declined" ? "opacity-50" : ""}`}
-                  >
-                    <td className="py-2.5 font-medium">{q.carrier}</td>
-                    <td className="py-2.5 text-right font-mono">{q.premium}</td>
-                    <td className="py-2.5 text-right font-mono">{q.deductible}</td>
-                    <td className="py-2.5 pl-4 text-xs">{q.limit}</td>
-                    <td className="py-2.5 pl-4 text-xs text-muted-foreground">{q.endorsements}</td>
-                    <td className="py-2.5 pl-4 text-xs">{q.effectiveDate}</td>
-                    <td className="py-2.5 pl-4 text-xs text-muted-foreground">
-                      {q.subjectivities.length ? q.subjectivities.join("; ") : "—"}
-                    </td>
-                    <td className="py-2.5 pl-4">
-                      <Chip
-                        tone={
-                          q.materiality === "Deal-breaker"
-                            ? "danger"
-                            : q.materiality === "Material"
-                              ? "warn"
-                              : "success"
-                        }
-                      >
-                        {q.materiality}
-                      </Chip>
-                    </td>
-                    <td className="py-2.5 pl-4 text-xs">
-                      <div>{q.validUntil}</div>
-                      <ValidityChip dateStr={q.validUntil} />
-                    </td>
-                    <td className="py-2.5 pl-4">
-                      <Chip
-                        tone={
-                          q.status === "Quoted"
-                            ? "accent"
-                            : q.status === "Bound"
-                              ? "success"
-                              : "danger"
-                        }
-                      >
-                        {q.status}
-                      </Chip>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {declinedQuotes.length > 0 && (
-            <div className="mt-5 border-t border-border pt-4">
-              <div className="mb-2 text-xs font-medium">
-                Declination detail · QC-03 (log only, no action in v1)
+      {!listQuery.isLoading && !listQuery.isError && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel title="Comparisons" subtitle={`${items.length} generated`}>
+            {items.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No comparisons yet — click "New comparison" to run one of the 6 real scenarios.
               </div>
-              <ul className="space-y-2">
-                {declinedQuotes.map((q) => (
-                  <li key={q.carrier} className="rounded-lg border border-border p-3 text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium">{q.carrier}</span>
-                      {q.appetiteConsistency && (
-                        <Chip
-                          tone={
-                            q.appetiteConsistency.status === "Consistent"
-                              ? "success"
-                              : q.appetiteConsistency.status === "Inconsistent"
-                                ? "warn"
-                                : "neutral"
-                          }
-                        >
-                          Appetite: {q.appetiteConsistency.status}
-                        </Chip>
-                      )}
-                    </div>
-                    <div className="mt-1 text-[12px] text-muted-foreground">
-                      <b className="text-foreground">Stated reason:</b>{" "}
-                      {q.declineReason ?? "No reason given in the decline email."}
-                    </div>
-                    {q.appetiteConsistency && (
-                      <div className="mt-1 text-[12px] text-muted-foreground">
-                        <b className="text-foreground">Consistency check:</b>{" "}
-                        {q.appetiteConsistency.note}
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => setSelectedId(row.id)}
+                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
+                      selectedId === row.id ? "bg-secondary/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate font-mono text-sm">
+                        {row.submission_id ?? row.id}
+                      </span>
+                      <div className="mt-1.5">
+                        <Chip>{row.status}</Chip>
                       </div>
-                    )}
-                  </li>
+                    </div>
+                  </button>
                 ))}
-              </ul>
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="AI recommendation">
-          <div className="rounded-xl border-2 border-success/40 bg-success/5 p-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-success" />
-              <div className="font-serif text-lg">Present James River</div>
-              <Chip tone="success">94%</Chip>
-            </div>
-            <p className="mt-2 text-sm">
-              James River is $27,500 lower with only standard subjectivities (signed application,
-              liquor license copy). Markel's price is close but adds two material subjectivities — a
-              4-year loss run pull and a written security plan — that would add turnaround risk
-              before the effective date.
-            </p>
-          </div>
-          <div className="mt-4 space-y-2 text-sm">
-            <Button variant="primary" className="w-full justify-center" onClick={presentToAgent}>
-              Present to retail agent
-            </Button>
-            <Button variant="secondary" className="w-full justify-center" onClick={requestRevised}>
-              Request revised terms
-            </Button>
-            <Button variant="danger" className="w-full justify-center" onClick={declineAllRemarket}>
-              Decline all — remarket
-            </Button>
-          </div>
-          <div className="mt-3 text-[10px] text-muted-foreground">
-            "Present to retail agent" hands this off to the Retail Agent Copilot's Quote Summary
-            draft —{" "}
-            <Link
-              to="/app/workflows/$slug"
-              params={{ slug: "agent-copilot" }}
-              className="text-accent underline-offset-2 hover:underline"
-            >
-              open Copilot →
-            </Link>
-          </div>
-        </Panel>
-      </div>
-
-      <div className="mt-5">
-        <Panel
-          title="Activity"
-          subtitle="Comparison output, broker selection, and eventual bind outcome — same feedback-loop pattern as other workflows"
-          actions={<FoundationBadge kind="matching" />}
-        >
-          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-[11px]">
-            <span className="text-muted-foreground">Record eventual outcome:</span>
-            <Button
-              variant="ghost"
-              className="!py-1 !text-xs"
-              onClick={() => recordBindOutcome("Bound")}
-            >
-              Bound
-            </Button>
-            <Button
-              variant="ghost"
-              className="!py-1 !text-xs"
-              onClick={() => recordBindOutcome("Lost to another market")}
-            >
-              Lost to another market
-            </Button>
-            {bindOutcome && (
-              <Chip tone={bindOutcome === "Bound" ? "success" : "danger"}>{bindOutcome}</Chip>
+              </div>
             )}
-          </div>
-          <ul className="divide-y divide-border">
-            {log.slice(0, 8).map((d, i) => (
-              <li key={i} className="flex items-start gap-3 py-3 text-sm">
-                <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
-                <div className="flex-1">
-                  <div>
-                    <b>{d.who}</b> — {d.what}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
-                </div>
-                {d.conf !== "—" && <Chip tone="neutral">{d.conf}</Chip>}
-              </li>
-            ))}
-          </ul>
-          <div className="mt-3 text-[10px] text-muted-foreground">
-            Session-only for this prototype — feeds the same Feedback/Eval store pattern as other
-            workflows, not yet persisted.
-          </div>
-        </Panel>
-      </div>
+          </Panel>
 
-      <LiveComparisonsSection />
+          <div className="space-y-5">
+            {!selectedId ? (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Select a comparison from the list, or click "New comparison."
+                </div>
+              </Panel>
+            ) : detailQuery.isLoading ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading comparison…
+                </div>
+              </Panel>
+            ) : detailQuery.isError ? (
+              <Panel>
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {detailQuery.error instanceof Error
+                    ? detailQuery.error.message
+                    : "Failed to load comparison."}
+                </div>
+              </Panel>
+            ) : payload ? (
+              <LiveComparisonCard itemId={detailQuery.data!.id} payload={payload} onActed={appendLog} />
+            ) : (
+              <Panel>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No comparison data for this item.
+                </div>
+              </Panel>
+            )}
+
+            <Panel
+              title="Activity"
+              subtitle="Comparison output, broker selection, and eventual bind outcome — same feedback-loop pattern as other workflows"
+              actions={<FoundationBadge kind="matching" />}
+            >
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-[11px]">
+                <span className="text-muted-foreground">
+                  Record eventual outcome (session log only — no backend field models this yet):
+                </span>
+                <Button
+                  variant="ghost"
+                  className="!py-1 !text-xs"
+                  onClick={() => recordBindOutcome("Bound")}
+                >
+                  Bound
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="!py-1 !text-xs"
+                  onClick={() => recordBindOutcome("Lost to another market")}
+                >
+                  Lost to another market
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="!py-1 !text-xs"
+                  onClick={() => recordBindOutcome("Declined all — remarketing")}
+                >
+                  Declined all — remarketing
+                </Button>
+                {bindOutcome && (
+                  <Chip tone={bindOutcome === "Bound" ? "success" : "danger"}>{bindOutcome}</Chip>
+                )}
+              </div>
+              <ul className="divide-y divide-border">
+                {log.length === 0 ? (
+                  <li className="py-6 text-center text-sm text-muted-foreground">
+                    No activity yet this session.
+                  </li>
+                ) : (
+                  log.slice(0, 10).map((d, i) => (
+                    <li key={i} className="flex items-start gap-3 py-3 text-sm">
+                      <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                        {d.at}
+                      </span>
+                      <div className="flex-1">
+                        <div>
+                          <b>{d.who}</b> — {d.what}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
+                      </div>
+                    </li>
+                  ))
+                )}
+              </ul>
+              <div className="mt-3 text-[10px] text-muted-foreground">
+                Session-only for this prototype — feeds the same Feedback/Eval store pattern as
+                other workflows, not yet persisted.
+              </div>
+            </Panel>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3240,11 +2785,13 @@ function ComparisonModeBadge({ mode }: { mode: string }) {
 function LiveQuoteRow({
   quote,
   isSelected,
+  isRecommended,
   onSelect,
   selecting,
 }: {
   quote: ExtractedQuoteOut;
   isSelected: boolean;
+  isRecommended: boolean;
   onSelect: () => void;
   selecting: boolean;
 }) {
@@ -3260,6 +2807,11 @@ function LiveQuoteRow({
         <div className="flex items-center gap-2">
           <span className="font-medium">{quote.carrier_name}</span>
           {declined && <Chip tone="danger">Declined</Chip>}
+          {isRecommended && !isSelected && (
+            <Chip tone="accent">
+              <Sparkles className="h-2.5 w-2.5" /> Recommended
+            </Chip>
+          )}
           {isSelected && (
             <Chip tone="success">
               <CheckCircle2 className="h-2.5 w-2.5" /> Selected
@@ -3285,15 +2837,15 @@ function LiveQuoteRow({
       ) : (
         <>
           <div className="mt-2 grid gap-1 text-[11px] text-muted-foreground sm:grid-cols-2">
-            {quote.limits && <span>Limits: {quote.limits}</span>}
-            {quote.deductibles?.all_perils && (
-              <span>Deductible (all perils): {quote.deductibles.all_perils}</span>
-            )}
-            {quote.deductibles?.wind_hail && (
-              <span>Deductible (wind/hail): {quote.deductibles.wind_hail}</span>
-            )}
-            {quote.effective_date && <span>Effective: {quote.effective_date}</span>}
-            {quote.quote_valid_through && <span>Valid through: {quote.quote_valid_through}</span>}
+            {/* QC-05/FR-5: missing fields are flagged "Not stated," never blank/omitted —
+                the backend already never fabricates a value, so null here is a real gap. */}
+            <span>Limits: {quote.limits ?? "Not stated"}</span>
+            <span>
+              Deductible (all perils): {quote.deductibles?.all_perils ?? "Not stated"}
+            </span>
+            <span>Deductible (wind/hail): {quote.deductibles?.wind_hail ?? "Not stated"}</span>
+            <span>Effective: {quote.effective_date ?? "Not stated"}</span>
+            <span>Valid through: {quote.quote_valid_through ?? "Not stated"}</span>
           </div>
           {quote.key_endorsements.length > 0 && (
             <div className="mt-2 text-[11px] text-muted-foreground">
@@ -3342,8 +2894,24 @@ function LiveComparisonCard({
   onActed: (who: string, what: string, ctx: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const who = payload.named_insured ?? payload.submission_id ?? itemId;
+
+  const startBinderMutation = useMutation({
+    mutationFn: () => runBinderIssuanceFromQuote(itemId),
+    onSuccess: (item) => {
+      toast.success("Real bind order started from this selected quote");
+      onActed(
+        "You",
+        `Started binder — POST /api/es/binder-issuance/run-from-quote-comparison`,
+        `${who} → Binder Issuance item ${item.id}`,
+      );
+      navigate({ to: "/app/workflows/$slug", params: { slug: "binder-issuance" } });
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to start binder"),
+  });
 
   const selectMutation = useMutation({
     mutationFn: (quoteId: string) => selectQuote(itemId, quoteId),
@@ -3437,6 +3005,7 @@ function LiveComparisonCard({
             key={q.quote_id}
             quote={q}
             isSelected={payload.selected_quote_id === q.quote_id}
+            isRecommended={payload.recommendation.primary_quote_id === q.quote_id}
             selecting={selectingId === q.quote_id}
             onSelect={() => selectMutation.mutate(q.quote_id)}
           />
@@ -3462,28 +3031,35 @@ function LiveComparisonCard({
         >
           Mark no action — will lapse
         </Button>
+        {payload.selected_quote_id && (
+          <Button
+            variant="primary"
+            disabled={startBinderMutation.isPending}
+            onClick={() => startBinderMutation.mutate()}
+            title="Builds a real Binder & Policy Issuance pre-bind pass from this selected quote's actual terms"
+          >
+            {startBinderMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowRight className="h-4 w-4" />
+            )}
+            Start binder
+          </Button>
+        )}
       </div>
     </Panel>
   );
 }
 
-function LiveComparisonsSection() {
+/* ============================================================
+   5. Binder & Policy Issuance Coordination
+   ============================================================ */
+
+export function BinderIssuance() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newBinderOpen, setNewBinderOpen] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
-
-  const listQuery = useQuery({
-    queryKey: ["quote-comparison", "list"],
-    queryFn: listQuoteComparison,
-  });
-  const items = listQuery.data ?? [];
-
-  const detailQuery = useQuery({
-    queryKey: ["quote-comparison", "detail", selectedId],
-    queryFn: () => getQuoteComparison(selectedId!),
-    enabled: Boolean(selectedId),
-    refetchOnWindowFocus: true, // urgency is recomputed against today on every GET — re-fetching matters
-  });
 
   function appendLog(who: string, what: string, ctx: string) {
     setLog((prev) => [
@@ -3498,63 +3074,103 @@ function LiveComparisonsSection() {
     ]);
   }
 
+  const listQuery = useQuery({
+    queryKey: ["binder-issuance", "list"],
+    queryFn: listBinderIssuance,
+  });
+  const items = listQuery.data ?? [];
+
+  useEffect(() => {
+    if (!selectedId && listQuery.data && listQuery.data.length > 0) {
+      setSelectedId(listQuery.data[0].id);
+    }
+  }, [listQuery.data, selectedId]);
+
+  const detailQuery = useQuery({
+    queryKey: ["binder-issuance", "detail", selectedId],
+    queryFn: () => getBinderIssuance(selectedId!),
+    enabled: Boolean(selectedId),
+    refetchOnWindowFocus: true, // issuance-overdue/reminder status is recomputed on every GET
+  });
+  const payload = detailQuery.data?.payload ?? null;
+
   const runMutation = useMutation({
-    mutationFn: (s: FixtureScenario) => runQuoteComparison(s.ref),
+    mutationFn: (s: BinderFixtureScenario) => runBinderIssuance(s.ref),
     onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["quote-comparison"] });
-      toast.success(`${s.label}: comparison generated`);
+      queryClient.invalidateQueries({ queryKey: ["binder-issuance"] });
+      toast.success(`${s.label}: coordination generated`);
+      appendLog("AI (Matching/Ranking Core)", "Bind coordination record generated", s.label);
       setSelectedId(item.id);
+      setNewBinderOpen(false);
     },
-    onError: (err: unknown, s) => {
-      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`);
-    },
+    onError: (err: unknown, s) =>
+      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
   });
 
   return (
-    <div className="mt-6 space-y-5">
-      <Panel
-        title="Live comparisons — wired to Backend-AI-OS"
-        subtitle="/api/es/quote-comparison — real Workflow_13 fixture scenarios (the table above stays mocked, including the hand-off to Agent Copilot)"
-      >
-        <div className="flex flex-wrap gap-2">
-          {QUOTE_FIXTURE_SCENARIOS.map((s) => (
-            <Button
-              key={s.ref}
-              variant="secondary"
-              disabled={runMutation.isPending}
-              onClick={() => runMutation.mutate(s)}
-            >
-              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {s.label}
-            </Button>
-          ))}
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
+      <PageHeader
+        eyebrow="Workflow 05"
+        title="Binder & Policy Issuance Coordination"
+        description="From selected quote to bound policy — subjectivity clearance, carrier bind confirmation, and issued-policy reconciliation, all checked against what was actually agreed, never assumed."
+        actions={
+          <Button variant="primary" onClick={() => setNewBinderOpen((v) => !v)}>
+            <Sparkles className="h-4 w-4" />
+            New binder
+          </Button>
+        }
+      />
+
+      {newBinderOpen && (
+        <div className="mb-5">
+          <Panel
+            title="Start a new bind coordination"
+            subtitle="Runs the real backend pipeline — POST /api/es/binder-issuance/run"
+            actions={
+              <Button variant="ghost" onClick={() => setNewBinderOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            <div className="flex flex-wrap gap-2">
+              {BINDER_FIXTURE_SCENARIOS.map((s) => (
+                <Button
+                  key={s.ref}
+                  variant="secondary"
+                  disabled={runMutation.isPending}
+                  onClick={() => runMutation.mutate(s)}
+                >
+                  {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {s.label}
+                </Button>
+              ))}
+            </div>
+          </Panel>
         </div>
-      </Panel>
+      )}
 
       {listQuery.isLoading && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading comparisons…
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading binders…
         </div>
       )}
       {listQuery.isError && (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          {listQuery.error instanceof Error
-            ? listQuery.error.message
-            : "Failed to load comparisons."}
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load binders."}
         </div>
       )}
 
       {!listQuery.isLoading && !listQuery.isError && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
-          <Panel title="Comparisons" subtitle={`${items.length} generated`}>
+          <Panel title="In-progress binders" subtitle={`${items.length} generated`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No comparisons yet — run a scenario above.
+                No binders yet — click "New binder" to run one of the 6 real scenarios.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -3584,13 +3200,13 @@ function LiveComparisonsSection() {
             {!selectedId ? (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  Select a comparison from the list.
+                  Select a binder from the list, or click "New binder."
                 </div>
               </Panel>
             ) : detailQuery.isLoading ? (
               <Panel>
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading comparison…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading binder…
                 </div>
               </Panel>
             ) : detailQuery.isError ? (
@@ -3599,26 +3215,22 @@ function LiveComparisonsSection() {
                   <AlertTriangle className="h-4 w-4" />
                   {detailQuery.error instanceof Error
                     ? detailQuery.error.message
-                    : "Failed to load comparison."}
+                    : "Failed to load binder."}
                 </div>
               </Panel>
-            ) : detailQuery.data?.payload ? (
-              <LiveComparisonCard
-                itemId={detailQuery.data.id}
-                payload={detailQuery.data.payload}
-                onActed={appendLog}
-              />
+            ) : payload ? (
+              <LiveBinderCard itemId={detailQuery.data!.id} payload={payload} onActed={appendLog} />
             ) : (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  No comparison data for this item.
+                  No binder data for this item.
                 </div>
               </Panel>
             )}
 
             <Panel
-              title="Activity (live section)"
-              subtitle="This session's real actions"
+              title="Audit log (E&O record)"
+              subtitle="Every step, every discrepancy found, and how it was resolved — proof terms were actively verified, not assumed"
               actions={<FoundationBadge kind="matching" />}
             >
               <ul className="divide-y divide-border">
@@ -3642,610 +3254,16 @@ function LiveComparisonsSection() {
                   ))
                 )}
               </ul>
+              <div className="mt-3 text-[10px] text-muted-foreground">
+                Session-only for this prototype — feeds the same Feedback/Eval store pattern as
+                other workflows. This is the most E&O-relevant record in the suite: it documents
+                that every carrier claim was checked against what was actually agreed, not taken
+                on faith.
+              </div>
             </Panel>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   5. Binder & Policy Issuance Coordination
-   ============================================================ */
-
-type BinderOverride = {
-  subjectivities?: Record<string, boolean>;
-  bindResolution?: Discrepancy["resolution"];
-  docsReceivedDate?: string | null;
-  docDiscrepancy?: Discrepancy | null;
-  docResolution?: Discrepancy["resolution"];
-  obligationStatus?: Record<string, "Pending" | "Satisfied">;
-  placementConfirmationSent?: boolean;
-  policyDocsDeliveredSent?: boolean;
-};
-
-// Merges a binder's base mock data with whatever the broker has actually done
-// this session (resolutions, clearances, simulated arrivals). Plain data
-// derivation, not a React hook — deliberately not named `use...` after the
-// last false-positive with the hooks-naming lint rule.
-function deriveBinderState(binder: Binder, ov: BinderOverride) {
-  const subjectivities = binder.subjectivities.map((s) => ({
-    ...s,
-    cleared: ov.subjectivities?.[s.label] ?? s.cleared,
-  }));
-  const unresolvedMaterial = subjectivities.filter((s) => s.tier === "Material" && !s.cleared);
-  const allCleared = subjectivities.every((s) => s.cleared);
-
-  const bindDiscrepancy: Discrepancy | null = binder.bindDiscrepancy
-    ? {
-        ...binder.bindDiscrepancy,
-        resolution: ov.bindResolution ?? binder.bindDiscrepancy.resolution,
-      }
-    : null;
-  const bindClean = !bindDiscrepancy || bindDiscrepancy.resolution !== "Unresolved";
-
-  const docsReceivedDate =
-    ov.docsReceivedDate !== undefined ? ov.docsReceivedDate : binder.docsReceivedDate;
-  const baseDocDiscrepancy =
-    ov.docDiscrepancy !== undefined ? ov.docDiscrepancy : binder.docDiscrepancy;
-  const docDiscrepancy: Discrepancy | null = baseDocDiscrepancy
-    ? { ...baseDocDiscrepancy, resolution: ov.docResolution ?? baseDocDiscrepancy.resolution }
-    : null;
-  const docsClean = !docDiscrepancy || docDiscrepancy.resolution !== "Unresolved";
-  const docsExpectedDays = daysUntil(binder.docsExpectedBy);
-  const docsOverdue = !docsReceivedDate && docsExpectedDays !== null && docsExpectedDays < 0;
-
-  const obligations = binder.postBindObligations.map((o) => ({
-    ...o,
-    status: ov.obligationStatus?.[o.label] ?? o.status,
-    overdue:
-      (ov.obligationStatus?.[o.label] ?? o.status) === "Pending" && (daysUntil(o.dueBy) ?? 0) < 0,
-  }));
-
-  const placementConfirmationSent =
-    ov.placementConfirmationSent ?? binder.placementConfirmationSent;
-  const policyDocsDeliveredSent = ov.policyDocsDeliveredSent ?? binder.policyDocsDeliveredSent;
-
-  return {
-    subjectivities,
-    unresolvedMaterial,
-    allCleared,
-    bindDiscrepancy,
-    bindClean,
-    docsReceivedDate,
-    docDiscrepancy,
-    docsClean,
-    docsOverdue,
-    obligations,
-    placementConfirmationSent,
-    policyDocsDeliveredSent,
-  };
-}
-
-function DiscrepancyBlock({
-  title,
-  discrepancy,
-  onResolve,
-}: {
-  title: string;
-  discrepancy: Discrepancy;
-  onResolve: (resolution: Discrepancy["resolution"]) => void;
-}) {
-  const resolved = discrepancy.resolution !== "Unresolved";
-  return (
-    <div
-      className={`rounded-lg border p-3 text-sm ${resolved ? "border-success/30 bg-success/5" : "border-2 border-destructive/40 bg-destructive/5"}`}
-    >
-      <div className="flex items-center gap-2 font-medium">
-        {resolved ? (
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-        ) : (
-          <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
-        )}
-        {title} — {discrepancy.field} mismatch
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-3 rounded-md border border-border bg-background p-2 text-xs">
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Requested
-          </div>
-          <div className="font-mono">{discrepancy.requested}</div>
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Carrier confirmed
-          </div>
-          <div className="font-mono">{discrepancy.confirmed}</div>
-        </div>
-      </div>
-      {resolved ? (
-        <div className="mt-2 text-[11px] text-muted-foreground">
-          Resolution: {discrepancy.resolution}
-        </div>
-      ) : (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            className="!py-1 !text-xs"
-            onClick={() => onResolve("Accepted carrier terms")}
-          >
-            Accept carrier's terms
-          </Button>
-          <Button
-            variant="danger"
-            className="!py-1 !text-xs"
-            onClick={() => onResolve("Disputed — pending carrier")}
-          >
-            Dispute — flag for follow-up
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function BinderIssuance() {
-  const navigate = useNavigate();
-  const [sel, setSel] = useState(binders[0].id);
-  const b = binders.find((x) => x.id === sel)!;
-  const [overrides, setOverrides] = useState<Record<string, BinderOverride>>({});
-  const ov = overrides[b.id] ?? {};
-  const view = deriveBinderState(b, ov);
-
-  const [log, setLog] = useState<LogEntry[]>(() => [
-    {
-      at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      who: "AI (Matching/Ranking Core)",
-      what: "Bind order generated matching selected quote terms exactly (BI-01)",
-      ctx: `${b.id} · ${b.insured}`,
-      conf: "—",
-    },
-  ]);
-
-  function appendLog(who: string, what: string, ctx: string, conf = "—") {
-    setLog((prev) => [
-      {
-        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        who,
-        what,
-        ctx,
-        conf,
-      },
-      ...prev,
-    ]);
-  }
-
-  function patch(binderId: string, patchOv: BinderOverride) {
-    setOverrides((prev) => ({ ...prev, [binderId]: { ...prev[binderId], ...patchOv } }));
-  }
-
-  function toggleSubjectivity(label: string, cleared: boolean) {
-    patch(b.id, { subjectivities: { ...ov.subjectivities, [label]: cleared } });
-    appendLog(
-      "Sam D. (Broker)",
-      `${cleared ? "Cleared" : "Reopened"} subjectivity "${label}"`,
-      `${b.id} · ${b.insured}`,
-    );
-  }
-
-  function resolveBind(resolution: Discrepancy["resolution"]) {
-    patch(b.id, { bindResolution: resolution });
-    appendLog(
-      "Sam D. (Broker)",
-      `Resolved bind-confirmation discrepancy (BI-03) — ${resolution}`,
-      `${b.id} · ${view.bindDiscrepancy?.field}: requested ${view.bindDiscrepancy?.requested} vs confirmed ${view.bindDiscrepancy?.confirmed}`,
-    );
-  }
-
-  function resolveDoc(resolution: Discrepancy["resolution"]) {
-    patch(b.id, { docResolution: resolution });
-    appendLog(
-      "Sam D. (Broker)",
-      `Resolved issued-policy discrepancy (BI-05) — ${resolution}`,
-      `${b.id} · ${view.docDiscrepancy?.field}: requested ${view.docDiscrepancy?.requested} vs confirmed ${view.docDiscrepancy?.confirmed}`,
-    );
-  }
-
-  function simulateDocsArrived() {
-    patch(b.id, {
-      docsReceivedDate: "Feb 03, 2026",
-      docDiscrepancy: {
-        field: "Effective date",
-        requested: b.effective,
-        confirmed: "Mar 03, 2026",
-        resolution: "Unresolved",
-      },
-    });
-    appendLog(
-      "AI (Extraction Core)",
-      "Policy documents received — reconciling against confirmed bind terms (BI-05)",
-      `${b.id} · ${b.insured}`,
-    );
-  }
-
-  function setObligation(label: string, status: "Pending" | "Satisfied") {
-    patch(b.id, { obligationStatus: { ...ov.obligationStatus, [label]: status } });
-    appendLog(
-      "Sam D. (Broker)",
-      `Post-bind obligation "${label}" marked ${status}`,
-      `${b.id} · ${b.insured}`,
-    );
-  }
-
-  function sendPlacementConfirmation() {
-    patch(b.id, { placementConfirmationSent: true });
-    appendLog(
-      "Sam D. (Broker)",
-      "Sent Placement Confirmation to Retail Agent Copilot (BI-06)",
-      `${b.id} · ${b.insured}`,
-    );
-    navigate({
-      to: "/app/workflows/$slug",
-      params: { slug: "agent-copilot" },
-      search: {
-        trigger: "placement-confirmation",
-        carrier: b.carrier,
-        insured: b.insured,
-        premium: b.premium,
-      },
-    });
-  }
-
-  function sendPolicyDocsDelivered() {
-    patch(b.id, { policyDocsDeliveredSent: true });
-    appendLog(
-      "Sam D. (Broker)",
-      "Sent Policy Documents Delivered to Retail Agent Copilot, forwarding final docs (BI-06)",
-      `${b.id} · ${b.insured}`,
-    );
-    navigate({
-      to: "/app/workflows/$slug",
-      params: { slug: "agent-copilot" },
-      search: {
-        trigger: "policy-docs-delivered",
-        carrier: b.carrier,
-        insured: b.insured,
-        premium: b.premium,
-      },
-    });
-  }
-
-  const steps = [
-    { label: "Selected quote received", done: true, note: `${b.carrier} · ${b.premium}` },
-    {
-      label: "Pre-bind subjectivity status (BI-02, inherited from QC-02)",
-      done: view.allCleared,
-      active: !view.allCleared,
-      note:
-        view.unresolvedMaterial.length > 0
-          ? `BLOCKED — material subjectivity unresolved: ${view.unresolvedMaterial.map((s) => s.label).join(", ")}`
-          : `${view.subjectivities.filter((s) => s.cleared).length} of ${view.subjectivities.length} cleared`,
-    },
-    {
-      label: "Bind order generated & sent to carrier (BI-01)",
-      done: view.allCleared,
-      active: false,
-      note: view.allCleared
-        ? "Matches selected quote terms exactly — sent manually by broker"
-        : "Blocked until subjectivities clear",
-    },
-    {
-      label: "Carrier bind confirmation reconciled (BI-03)",
-      done: (b.status === "Bound — awaiting policy" || b.status === "Issued") && view.bindClean,
-      active: (b.status === "Bound — awaiting policy" || b.status === "Issued") && !view.bindClean,
-      note: view.bindDiscrepancy
-        ? view.bindClean
-          ? `Discrepancy resolved — ${view.bindDiscrepancy.resolution}`
-          : "Material mismatch found — resolve before this reads as a clean bind"
-        : b.status === "Ready to bind" || b.status === "Subjectivities open"
-          ? "Not yet bound"
-          : "Checked line-by-line against agreed terms — clean",
-    },
-  ];
-
-  return (
-    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
-      <PageHeader
-        eyebrow="Workflow 05"
-        title="Binder & Policy Issuance Coordination"
-        description="From selected quote to bound policy — subjectivity clearance, carrier bind confirmation, and issued-policy reconciliation, all checked against what was actually agreed, never assumed."
-        actions={
-          <Button
-            variant="primary"
-            disabled={view.unresolvedMaterial.length > 0}
-            title={
-              view.unresolvedMaterial.length > 0
-                ? "Blocked — resolve the unresolved material subjectivity first"
-                : undefined
-            }
-          >
-            Issue binder
-          </Button>
-        }
-      />
-
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <Panel title="In-progress binders">
-          <ul className="divide-y divide-border">
-            {binders.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => setSel(r.id)}
-                className={`w-full py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
-              >
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{r.insured}</span>
-                  <span className="text-[11px] text-muted-foreground">{r.effective}</span>
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {r.id} · {r.carrier}
-                </div>
-                <div className="mt-1 flex items-center gap-2">
-                  <Chip
-                    tone={
-                      r.status === "Issued"
-                        ? "success"
-                        : r.status === "Ready to bind"
-                          ? "accent"
-                          : "warn"
-                    }
-                  >
-                    {r.status}
-                  </Chip>
-                  <span className="text-xs font-mono">{r.premium}</span>
-                </div>
-              </button>
-            ))}
-          </ul>
-        </Panel>
-
-        <div className="space-y-5">
-          <Panel
-            title={`${b.insured} · bind workflow`}
-            subtitle={`${b.id} · ${b.carrier}`}
-            actions={<FoundationBadge kind="matching" />}
-          >
-            <ol className="space-y-3">
-              {steps.map((s, i) => (
-                <li key={i} className="flex items-start gap-3 rounded-lg border border-border p-3">
-                  <span
-                    className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs ${
-                      s.done
-                        ? "bg-success text-background"
-                        : s.active
-                          ? "bg-accent text-accent-foreground"
-                          : "bg-secondary text-muted-foreground"
-                    }`}
-                  >
-                    {s.done ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className={`text-sm ${s.active ? "font-medium" : ""}`}>{s.label}</div>
-                    <div className="text-[11px] text-muted-foreground">{s.note}</div>
-                  </div>
-                </li>
-              ))}
-            </ol>
-
-            {!view.allCleared && (
-              <div className="mt-3 space-y-2 rounded-lg border border-dashed border-border p-3">
-                <div className="text-xs font-medium">Clear subjectivities</div>
-                {view.subjectivities
-                  .filter((s) => !s.cleared)
-                  .map((s) => (
-                    <div key={s.label} className="flex items-center justify-between gap-2 text-sm">
-                      <span className="flex items-center gap-2">
-                        <Chip tone={s.tier === "Material" ? "danger" : "neutral"}>{s.tier}</Chip>
-                        {s.label}
-                      </span>
-                      <Button
-                        variant="secondary"
-                        className="!py-1 !text-xs"
-                        onClick={() => toggleSubjectivity(s.label, true)}
-                      >
-                        Mark cleared
-                      </Button>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </Panel>
-
-          {view.bindDiscrepancy && (
-            <DiscrepancyBlock
-              title="Bind confirmation vs requested terms"
-              discrepancy={view.bindDiscrepancy}
-              onResolve={resolveBind}
-            />
-          )}
-
-          {view.bindClean && (b.status === "Bound — awaiting policy" || b.status === "Issued") && (
-            <div
-              className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm ${view.docsOverdue ? "border-2 border-destructive/40 bg-destructive/5" : "border-border"}`}
-            >
-              <div>
-                <div className="font-medium">Policy document arrival (BI-04)</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {view.docsReceivedDate
-                    ? `Received ${view.docsReceivedDate}`
-                    : view.docsOverdue
-                      ? `Overdue — carrier's stated delivery date (${b.docsExpectedBy}) has passed with nothing received`
-                      : `Expected by ${b.docsExpectedBy} — monitoring against carrier's stated timeline`}
-                </div>
-              </div>
-              {view.docsOverdue && !view.docsReceivedDate && (
-                <Button
-                  variant="secondary"
-                  className="!py-1 !text-xs"
-                  onClick={simulateDocsArrived}
-                >
-                  Simulate docs arrived
-                </Button>
-              )}
-            </div>
-          )}
-
-          {view.docDiscrepancy && (
-            <DiscrepancyBlock
-              title="Issued policy vs confirmed bind terms"
-              discrepancy={view.docDiscrepancy}
-              onResolve={resolveDoc}
-            />
-          )}
-
-          <div className="grid gap-5 md:grid-cols-2">
-            <Panel title="AI bind recommendation">
-              <div className="rounded-xl border-2 border-success/40 bg-success/5 p-4">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-success" />
-                  <div className="font-serif text-lg">
-                    {b.status === "Ready to bind" ? "Ready to bind" : b.status}
-                  </div>
-                </div>
-                <p className="mt-2 text-sm">
-                  {view.subjectivities.filter((s) => s.cleared).length} of{" "}
-                  {view.subjectivities.length} subjectivities satisfied. Premium {b.premium},
-                  effective {b.effective}. Never treats a carrier document as authoritative without
-                  reconciling it against the terms actually agreed.
-                </p>
-              </div>
-            </Panel>
-            <Panel title="Retail Agent Comms triggers (BI-06)">
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-border p-3">
-                  <div>
-                    <div className="font-medium">Placement Confirmation</div>
-                    <div className="text-[11px] text-muted-foreground">Fires on clean bind</div>
-                  </div>
-                  {view.placementConfirmationSent ? (
-                    <Chip tone="success">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Sent
-                    </Chip>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      className="!py-1 !text-xs"
-                      disabled={!view.bindClean}
-                      onClick={sendPlacementConfirmation}
-                    >
-                      Send
-                    </Button>
-                  )}
-                </div>
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-border p-3">
-                  <div>
-                    <div className="font-medium">Policy Documents Delivered</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      Fires on clean doc reconciliation, forwards final docs
-                    </div>
-                  </div>
-                  {view.policyDocsDeliveredSent ? (
-                    <Chip tone="success">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Sent
-                    </Chip>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      className="!py-1 !text-xs"
-                      disabled={!view.docsReceivedDate || !view.docsClean}
-                      title={
-                        !view.docsReceivedDate
-                          ? "Docs not yet received"
-                          : !view.docsClean
-                            ? "Resolve the doc discrepancy first"
-                            : undefined
-                      }
-                      onClick={sendPolicyDocsDelivered}
-                    >
-                      Send
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </Panel>
-          </div>
-
-          <Panel
-            title="Post-bind obligation tracking (BI-07)"
-            subtitle="Own timeline — independent of the bind/issuance steps above"
-          >
-            {view.obligations.length === 0 ? (
-              <div className="text-sm text-muted-foreground">
-                No post-bind obligations tracked yet for this record.
-              </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {view.obligations.map((o) => (
-                  <li
-                    key={o.label}
-                    className="flex items-center justify-between gap-3 py-3 text-sm"
-                  >
-                    <div>
-                      <div className="font-medium">{o.label}</div>
-                      <div className="text-[11px] text-muted-foreground">Due {o.dueBy}</div>
-                    </div>
-                    {o.status === "Satisfied" ? (
-                      <Chip tone="success">Satisfied</Chip>
-                    ) : o.overdue ? (
-                      <div className="flex items-center gap-2">
-                        <Chip tone="danger">Overdue</Chip>
-                        <Button
-                          variant="secondary"
-                          className="!py-1 !text-xs"
-                          onClick={() => setObligation(o.label, "Satisfied")}
-                        >
-                          Mark satisfied
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <Chip tone="neutral">Pending</Chip>
-                        <Button
-                          variant="secondary"
-                          className="!py-1 !text-xs"
-                          onClick={() => setObligation(o.label, "Satisfied")}
-                        >
-                          Mark satisfied
-                        </Button>
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-
-          <Panel
-            title="Audit log (BI-08 / E&O record)"
-            subtitle="Every step, every discrepancy found, and how it was resolved — proof terms were actively verified, not assumed"
-            actions={<FoundationBadge kind="matching" />}
-          >
-            <ul className="divide-y divide-border">
-              {log.slice(0, 10).map((d, i) => (
-                <li key={i} className="flex items-start gap-3 py-3 text-sm">
-                  <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
-                  <div className="flex-1">
-                    <div>
-                      <b>{d.who}</b> — {d.what}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 text-[10px] text-muted-foreground">
-              Session-only for this prototype — feeds the same Feedback/Eval store pattern as other
-              workflows. This is the most E&O-relevant record in the suite: it documents that every
-              carrier claim was checked against what was actually agreed, not taken on faith.
-            </div>
-          </Panel>
-        </div>
-      </div>
-
-      <LiveBindersSection />
     </div>
   );
 }
@@ -4376,6 +3394,23 @@ function LiveBinderCard({
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Escalate failed"),
   });
 
+  function copyBindOrder() {
+    const t = payload.requested_bind_terms;
+    const lines = [
+      `Bind order — ${who}`,
+      `Carrier: ${payload.carrier_name}`,
+      `Premium: ${t.premium ?? "Not specified"}`,
+      `Limits: ${t.limits ?? "Not specified"}`,
+      `Deductible (all perils): ${t.deductible_all_perils ?? "Not specified"}`,
+      `Deductible (wind/hail): ${t.deductible_wind_hail ?? "Not specified"}`,
+      `Effective date: ${t.effective_date ?? "Not specified"}`,
+    ].join("\n");
+    navigator.clipboard
+      .writeText(lines)
+      .then(() => toast.success("Bind order details copied"))
+      .catch(() => toast.error("Couldn't copy — select the text and copy manually."));
+  }
+
   return (
     <Panel>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -4396,7 +3431,13 @@ function LiveBinderCard({
           </div>
           <div className="mt-1 text-[11px] text-muted-foreground">{payload.carrier_name}</div>
         </div>
-        <FoundationBadge kind="matching" />
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" onClick={copyBindOrder}>
+            <Copy className="h-3.5 w-3.5" />
+            Copy bind order
+          </Button>
+          <FoundationBadge kind="matching" />
+        </div>
       </div>
 
       {unresolvedMaterial.length > 0 && (
@@ -4500,23 +3541,15 @@ function LiveBinderCard({
   );
 }
 
-function LiveBindersSection() {
+/* ============================================================
+   6. Endorsement / Mid-Term Change Processing
+   ============================================================ */
+
+export function EndorsementProcessing() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newRequestOpen, setNewRequestOpen] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
-
-  const listQuery = useQuery({
-    queryKey: ["binder-issuance", "list"],
-    queryFn: listBinderIssuance,
-  });
-  const items = listQuery.data ?? [];
-
-  const detailQuery = useQuery({
-    queryKey: ["binder-issuance", "detail", selectedId],
-    queryFn: () => getBinderIssuance(selectedId!),
-    enabled: Boolean(selectedId),
-    refetchOnWindowFocus: true,
-  });
 
   function appendLog(who: string, what: string, ctx: string) {
     setLog((prev) => [
@@ -4531,60 +3564,100 @@ function LiveBindersSection() {
     ]);
   }
 
+  const listQuery = useQuery({ queryKey: ["endorsement", "list"], queryFn: listEndorsement });
+  const items = listQuery.data ?? [];
+
+  useEffect(() => {
+    if (!selectedId && listQuery.data && listQuery.data.length > 0) {
+      setSelectedId(listQuery.data[0].id);
+    }
+  }, [listQuery.data, selectedId]);
+
+  const detailQuery = useQuery({
+    queryKey: ["endorsement", "detail", selectedId],
+    queryFn: () => getEndorsement(selectedId!),
+    enabled: Boolean(selectedId),
+  });
+  const payload = detailQuery.data?.payload ?? null;
+
   const runMutation = useMutation({
-    mutationFn: (s: BinderFixtureScenario) => runBinderIssuance(s.ref),
+    mutationFn: (s: EndorsementFixtureScenario) => runEndorsement(s.ref),
     onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["binder-issuance"] });
-      toast.success(`${s.label}: coordination generated`);
+      queryClient.invalidateQueries({ queryKey: ["endorsement"] });
+      toast.success(`${s.label}: request processed`);
+      appendLog("AI (Matching/Ranking Core)", "Endorsement request processed", s.label);
       setSelectedId(item.id);
+      setNewRequestOpen(false);
     },
     onError: (err: unknown, s) =>
       toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
   });
 
   return (
-    <div className="mt-6 space-y-5">
-      <Panel
-        title="Live binders — wired to Backend-AI-OS"
-        subtitle="/api/es/binder-issuance — real Workflow_14 fixture scenarios (the panels above stay mocked, including the hand-offs to Agent Copilot)"
-      >
-        <div className="flex flex-wrap gap-2">
-          {BINDER_FIXTURE_SCENARIOS.map((s) => (
-            <Button
-              key={s.ref}
-              variant="secondary"
-              disabled={runMutation.isPending}
-              onClick={() => runMutation.mutate(s)}
-            >
-              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {s.label}
-            </Button>
-          ))}
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
+      <PageHeader
+        eyebrow="Workflow 06"
+        title="Endorsement / Mid-Term Change Processing"
+        description="AI classifies materiality, rechecks appetite against the carrier's current profile, and reconciles the issued endorsement item by item before any trigger fires — never assuming appetite fit from absent data, never trusting a carrier's issued document without reconciling it."
+        actions={
+          <Button variant="primary" onClick={() => setNewRequestOpen((v) => !v)}>
+            <Sparkles className="h-4 w-4" />
+            New endorsement request
+          </Button>
+        }
+      />
+
+      {newRequestOpen && (
+        <div className="mb-5">
+          <Panel
+            title="Start a new endorsement request"
+            subtitle="Runs the real backend pipeline — POST /api/es/endorsement/run"
+            actions={
+              <Button variant="ghost" onClick={() => setNewRequestOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            <div className="flex flex-wrap gap-2">
+              {ENDORSEMENT_FIXTURE_SCENARIOS.map((s) => (
+                <Button
+                  key={s.ref}
+                  variant="secondary"
+                  disabled={runMutation.isPending}
+                  onClick={() => runMutation.mutate(s)}
+                >
+                  {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {s.label}
+                </Button>
+              ))}
+            </div>
+          </Panel>
         </div>
-      </Panel>
+      )}
 
       {listQuery.isLoading && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading binders…
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading endorsement requests…
         </div>
       )}
       {listQuery.isError && (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load binders."}
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load requests."}
         </div>
       )}
 
       {!listQuery.isLoading && !listQuery.isError && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
-          <Panel title="Binders" subtitle={`${items.length} generated`}>
+          <Panel title="Open mid-term change requests" subtitle={`${items.length} generated`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No binders yet — run a scenario above.
+                No requests yet — click "New endorsement request" to run one of the 6 real
+                scenarios.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -4614,13 +3687,13 @@ function LiveBindersSection() {
             {!selectedId ? (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  Select a binder from the list.
+                  Select a request from the list, or click "New endorsement request."
                 </div>
               </Panel>
             ) : detailQuery.isLoading ? (
               <Panel>
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading binder…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading request…
                 </div>
               </Panel>
             ) : detailQuery.isError ? (
@@ -4629,26 +3702,26 @@ function LiveBindersSection() {
                   <AlertTriangle className="h-4 w-4" />
                   {detailQuery.error instanceof Error
                     ? detailQuery.error.message
-                    : "Failed to load binder."}
+                    : "Failed to load request."}
                 </div>
               </Panel>
-            ) : detailQuery.data?.payload ? (
-              <LiveBinderCard
-                itemId={detailQuery.data.id}
-                payload={detailQuery.data.payload}
+            ) : payload ? (
+              <LiveEndorsementCard
+                itemId={detailQuery.data!.id}
+                payload={payload}
                 onActed={appendLog}
               />
             ) : (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  No binder data for this item.
+                  No request data for this item.
                 </div>
               </Panel>
             )}
 
             <Panel
-              title="Activity (live section)"
-              subtitle="This session's real actions"
+              title="Audit log (E&O record)"
+              subtitle="Every classification decision, appetite outcome, and reconciliation result — including appetite-unknown resolutions logged as a signal for Carrier Appetite Intelligence"
               actions={<FoundationBadge kind="matching" />}
             >
               <ul className="divide-y divide-border">
@@ -4672,533 +3745,14 @@ function LiveBindersSection() {
                   ))
                 )}
               </ul>
+              <div className="mt-3 text-[10px] text-muted-foreground">
+                Session-only for this prototype — feeds the same Feedback/Eval store pattern as
+                other workflows.
+              </div>
             </Panel>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   6. Endorsement / Mid-Term Change Processing
-   ============================================================ */
-
-type EndorsementOverride = {
-  itemResolution?: Record<string, Discrepancy["resolution"]>;
-  endorsementConfirmedSent?: boolean;
-};
-
-// Same shape as deriveBinderState — plain data derivation, not a hook.
-function deriveEndorsementState(e: MidTermChange, ov: EndorsementOverride) {
-  const items = e.items.map((it) => ({
-    ...it,
-    discrepancy: it.discrepancy
-      ? {
-          ...it.discrepancy,
-          resolution: ov.itemResolution?.[it.label] ?? it.discrepancy.resolution,
-        }
-      : null,
-  }));
-  const unresolvedItems = items.filter((it) => it.discrepancy?.resolution === "Unresolved");
-  const reconciliationClean = e.carrierStatus === "Issued" && unresolvedItems.length === 0;
-
-  const route: "a" | "b" | "c" =
-    e.touchesExposure && e.appetiteRecheck === "Outside appetite"
-      ? "c"
-      : e.classification === "UW-review-required" ||
-          (e.touchesExposure && e.appetiteRecheck === "Unknown")
-        ? "b"
-        : "a";
-
-  const endorsementConfirmedSent = ov.endorsementConfirmedSent ?? e.endorsementConfirmedSent;
-
-  return { items, unresolvedItems, reconciliationClean, route, endorsementConfirmedSent };
-}
-
-export function EndorsementProcessing() {
-  const navigate = useNavigate();
-  const [sel, setSel] = useState(midTermChanges[0].id);
-  const e = midTermChanges.find((x) => x.id === sel)!;
-  const [overrides, setOverrides] = useState<Record<string, EndorsementOverride>>({});
-  const ov = overrides[e.id] ?? {};
-  const view = deriveEndorsementState(e, ov);
-
-  const [log, setLog] = useState<LogEntry[]>(() => {
-    const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return [
-      {
-        at,
-        who: "AI (Extraction Core)",
-        what: "Issued endorsement reconciled item by item (EP-05) — 1 of 2 items clean, 1 flagged (excess layer attachment mismatch)",
-        ctx: "MTC-8811 · Ridgeline Contractors, Inc.",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Extraction Core)",
-        what: "Issued endorsement reconciled item by item (EP-05) — clean, matches request exactly",
-        ctx: "MTC-8812 · Cedar Grove Assisted Living",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Extraction Core)",
-        what: "Issued endorsement reconciled item by item (EP-05) — clean, matches request exactly",
-        ctx: "MTC-8814 · Palmetto Cold Storage LLC",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Classified UW-review-required (EP-01) · appetite recheck: Unknown — logged as a signal for the deferred Carrier Appetite Intelligence workflow (EP-11, same idea as QC-03)",
-        ctx: "MTC-8811 · Ridgeline Contractors, Inc.",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Classified UW-review-required (EP-01) · appetite recheck: Outside appetite — routed to (c), broker prompted for a new Submission Market Matching pass (EP-07)",
-        ctx: "MTC-8813 · Highline Hospitality Group",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Classified Routine (EP-01) · appetite recheck not applicable — no class/state/severity exposure change",
-        ctx: "MTC-8812 · Cedar Grove Assisted Living",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Classified Routine (EP-01) · appetite recheck: Within appetite — routed to (a) quick send (EP-07)",
-        ctx: "MTC-8814 · Palmetto Cold Storage LLC",
-        conf: "—",
-      },
-    ];
-  });
-
-  function appendLog(who: string, what: string, ctx: string, conf = "—") {
-    setLog((prev) => [
-      {
-        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        who,
-        what,
-        ctx,
-        conf,
-      },
-      ...prev,
-    ]);
-  }
-
-  function patch(changeId: string, patchOv: EndorsementOverride) {
-    setOverrides((prev) => ({ ...prev, [changeId]: { ...prev[changeId], ...patchOv } }));
-  }
-
-  function resolveItem(label: string, resolution: Discrepancy["resolution"]) {
-    patch(e.id, { itemResolution: { ...ov.itemResolution, [label]: resolution } });
-    const item = e.items.find((i) => i.label === label);
-    appendLog(
-      "Sam D. (Broker)",
-      `Resolved issued-endorsement discrepancy (EP-05) — ${resolution}`,
-      `${e.id} · ${item?.discrepancy?.field}: requested ${item?.discrepancy?.requested} vs confirmed ${item?.discrepancy?.confirmed}`,
-    );
-  }
-
-  function sendEndorsementConfirmed() {
-    patch(e.id, { endorsementConfirmedSent: true });
-    appendLog(
-      "Sam D. (Broker)",
-      "Sent endorsement-confirmed trigger to Retail Agent Comms (EP-10)",
-      `${e.id} · ${e.insured}`,
-    );
-    navigate({
-      to: "/app/workflows/$slug",
-      params: { slug: "agent-copilot" },
-      search: {
-        trigger: "endorsement-confirmed",
-        carrier: e.carrier,
-        insured: e.insured,
-      },
-    });
-  }
-
-  function startMarketMatchingHandoff() {
-    appendLog(
-      "Sam D. (Broker)",
-      "Started a new Submission Market Matching pass for the increased exposure (EP-07c, out of scope — handoff only)",
-      `${e.id} · ${e.insured}`,
-    );
-    toast("Handoff logged — a new Submission Market Matching pass would begin for this exposure.");
-  }
-
-  return (
-    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
-      <PageHeader
-        eyebrow="Workflow 06"
-        title="Endorsement / Mid-Term Change Processing"
-        description="AI classifies materiality, rechecks appetite against the carrier's current profile, and reconciles the issued endorsement item by item before any trigger fires — never assuming appetite fit from absent data, never trusting a carrier's issued document without reconciling it."
-        actions={<Button variant="secondary">Return to agent</Button>}
-      />
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <Panel title="Open mid-term change requests">
-          <ul className="divide-y divide-border">
-            {midTermChanges.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => setSel(r.id)}
-                className={`w-full py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
-              >
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{r.insured}</span>
-                  <span className="text-[11px] text-muted-foreground">{r.requested}</span>
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {r.id} · {r.carrier}
-                </div>
-                <div className="mt-1 flex items-center gap-2">
-                  <Chip tone="accent">{r.type}</Chip>
-                  <Chip
-                    tone={
-                      r.materiality === "Complex"
-                        ? "danger"
-                        : r.materiality === "Material"
-                          ? "warn"
-                          : "success"
-                    }
-                  >
-                    {r.materiality}
-                  </Chip>
-                </div>
-              </button>
-            ))}
-          </ul>
-        </Panel>
-
-        <div className="space-y-5">
-          <Panel>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-[11px] font-mono text-muted-foreground">
-                  {e.id} · Policy {e.policy} · {e.carrier}
-                </div>
-                <h2 className="mt-1 font-serif text-2xl">{e.insured}</h2>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Requested change: {e.type} · Requested effective {e.requestedEffectiveDate} (EP-02
-                  extraction)
-                </div>
-              </div>
-            </div>
-          </Panel>
-
-          <Panel
-            title="AI Difference Engine"
-            subtitle="Before → After"
-            actions={<FoundationBadge kind="extraction" />}
-          >
-            <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border text-sm">
-              <div className="bg-secondary/60 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Change
-              </div>
-              <div className="bg-secondary/60 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                In-force policy
-              </div>
-              <div className="bg-secondary/60 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                After endorsement
-              </div>
-              <Row label="Locations" prior="14" now="15" change="+1 · Ocala FL" />
-              <Row label="TIV" prior="$42.8M" now="$45.2M" change="+$2.4M" />
-              <Row label="Sprinklered" prior="92%" now="93%" change="+1pp" positive />
-              <Row
-                label="Premium"
-                prior="$187,400"
-                now="$201,600"
-                change={
-                  e.premiumBearing
-                    ? "Premium-bearing — see proration inputs (EP-06)"
-                    : "No premium impact"
-                }
-                strong
-              />
-            </div>
-          </Panel>
-
-          <div className="grid gap-5 md:grid-cols-2">
-            <Panel
-              title="Classification (EP-01)"
-              actions={
-                <div className="flex items-center gap-2">
-                  <Chip
-                    tone={
-                      e.materiality === "Complex"
-                        ? "danger"
-                        : e.materiality === "Material"
-                          ? "warn"
-                          : "success"
-                    }
-                  >
-                    {e.materiality}
-                  </Chip>
-                  <Chip tone={e.classification === "Routine" ? "success" : "warn"}>
-                    {e.classification}
-                  </Chip>
-                </div>
-              }
-            >
-              <p className="text-sm text-muted-foreground">
-                {e.materiality === "Complex"
-                  ? "Multi-part request — each item reconciled independently below once the carrier responds."
-                  : e.materiality === "Material"
-                    ? "Changes total exposure or limits enough to require a full appetite recheck before drafting."
-                    : "No change to exposure basis — routed for a light-touch approval."}{" "}
-                Classified by type first, then materiality within type — independent of the appetite
-                outcome below.
-              </p>
-            </Panel>
-
-            <Panel title="Appetite recheck (EP-02)" actions={<FoundationBadge kind="matching" />}>
-              {!e.touchesExposure ? (
-                <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
-                  Not applicable — this change doesn't touch class, state, or severity exposure, so
-                  no appetite recheck was triggered.
-                </div>
-              ) : (
-                <div
-                  className={`rounded-lg border p-3 text-sm ${
-                    e.appetiteRecheck === "Within appetite"
-                      ? "border-success/30 bg-success/5"
-                      : e.appetiteRecheck === "Outside appetite"
-                        ? "border-2 border-destructive/40 bg-destructive/5"
-                        : "border-2 border-warn/40 bg-warn/5"
-                  }`}
-                >
-                  <div
-                    className={`flex items-center gap-2 font-medium ${
-                      e.appetiteRecheck === "Within appetite"
-                        ? "text-success"
-                        : e.appetiteRecheck === "Outside appetite"
-                          ? "text-destructive"
-                          : "text-warn"
-                    }`}
-                  >
-                    {e.appetiteRecheck === "Within appetite" ? (
-                      <CheckCircle2 className="h-4 w-4 shrink-0" />
-                    ) : e.appetiteRecheck === "Outside appetite" ? (
-                      <Ban className="h-4 w-4 shrink-0" />
-                    ) : (
-                      <AlertTriangle className="h-4 w-4 shrink-0" />
-                    )}
-                    {e.appetiteRecheck}
-                  </div>
-                  <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                    {e.appetiteReasons.map((r, i) => (
-                      <li key={i}>{r}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </Panel>
-          </div>
-
-          <Panel title="Premium impact & proration (EP-03 / EP-06)">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              {e.premiumBearing ? (
-                <TrendingUp className="h-4 w-4 text-accent" />
-              ) : (
-                <CheckCircle2 className="h-4 w-4 text-success" />
-              )}
-              {e.premiumBearing ? "Premium-bearing change" : "Not premium-bearing"}
-            </div>
-            {e.premiumBearing && e.prorationInputs && (
-              <>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Mid-term premium-bearing change — proration inputs only. No final prorated figure
-                  is calculated here.
-                </p>
-                <ul className="mt-2 space-y-1 text-sm">
-                  <li>
-                    Remaining days in term:{" "}
-                    <span className="font-mono">{e.prorationInputs.remainingDaysInTerm}</span>
-                  </li>
-                  <li>
-                    Annual premium basis:{" "}
-                    <span className="font-mono">{e.prorationInputs.annualPremiumBasis}</span>
-                  </li>
-                  <li>
-                    Requested effective date:{" "}
-                    <span className="font-mono">{e.prorationInputs.effectiveDate}</span>
-                  </li>
-                </ul>
-              </>
-            )}
-          </Panel>
-
-          <Panel title="Broker review routing (EP-07)">
-            {view.route === "a" && (
-              <div className="rounded-lg border border-success/30 bg-success/5 p-3 text-sm">
-                <div className="flex items-center gap-2 font-medium text-success">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  (a) Routine, in appetite — quick review + send
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {e.carrierStatus === "Issued"
-                    ? "Already sent and issued — no underwriting escalation was needed."
-                    : "Draft matches the agent's request exactly and can go straight to the carrier."}
-                </p>
-              </div>
-            )}
-            {view.route === "b" && (
-              <div className="rounded-lg border-2 border-warn/40 bg-warn/5 p-3 text-sm">
-                <div className="flex items-center gap-2 font-medium text-warn">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  (b) UW-review-required or appetite-unknown — send with full context
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {e.carrierStatus === "Issued"
-                    ? "Sent to the carrier's UW team with full context — not a standard endorsement request."
-                    : "Routed to the carrier's UW team with full context, not a standard endorsement request."}
-                </p>
-              </div>
-            )}
-            {view.route === "c" && (
-              <div className="rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
-                <div className="flex items-center gap-2 font-medium text-destructive">
-                  <Ban className="h-4 w-4 shrink-0" />
-                  (c) Outside appetite — new exposure needs its own submission
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Not drafted or sent to the carrier as an endorsement. Broker should start a new
-                  Submission Market Matching pass for the increased exposure (out of scope here —
-                  handoff only).
-                </p>
-                <Button
-                  variant="secondary"
-                  className="mt-3 !py-1 !text-xs"
-                  onClick={startMarketMatchingHandoff}
-                >
-                  Start new Submission Market Matching pass
-                </Button>
-              </div>
-            )}
-          </Panel>
-
-          <Panel title="Carrier response (EP-08)">
-            {e.carrierStatus === "Pending broker decision" && (
-              <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
-                <Info className="h-4 w-4 shrink-0" />
-                Not yet sent — awaiting the broker's routing decision above.
-              </div>
-            )}
-            {e.carrierStatus === "Issued" && (
-              <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-sm">
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-                Carrier issued the endorsement — reconciling item by item below, never assumed
-                correct.
-              </div>
-            )}
-            {e.carrierStatus === "Declined" && (
-              <div className="flex items-center gap-2 rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
-                <XCircle className="h-4 w-4 shrink-0 text-destructive" />
-                Carrier declined — returned a decision on the material change instead of issuing.
-              </div>
-            )}
-          </Panel>
-
-          <Panel
-            title="Item-level reconciliation (EP-05)"
-            subtitle={
-              view.items.length > 1
-                ? "Multi-part request — each item reconciled independently"
-                : undefined
-            }
-          >
-            <div className="space-y-3">
-              {view.items.map((it) =>
-                it.issued === null ? (
-                  <div
-                    key={it.label}
-                    className="flex items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground"
-                  >
-                    <Info className="h-4 w-4 shrink-0" />
-                    {it.label} — awaiting carrier response
-                  </div>
-                ) : it.discrepancy ? (
-                  <DiscrepancyBlock
-                    key={it.label}
-                    title={it.label}
-                    discrepancy={it.discrepancy}
-                    onResolve={(r) => resolveItem(it.label, r)}
-                  />
-                ) : (
-                  <div key={it.label} className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-                    {it.label} — issued matches request exactly
-                  </div>
-                ),
-              )}
-            </div>
-          </Panel>
-
-          <Panel title="Retail Agent Comms trigger (EP-10)">
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-border p-3 text-sm">
-              <div>
-                <div className="font-medium">Endorsement confirmed</div>
-                <div className="text-[11px] text-muted-foreground">
-                  Fires on clean item-level reconciliation; held on any unresolved discrepancy —
-                  same gating discipline as Binder & Issuance
-                </div>
-              </div>
-              {view.endorsementConfirmedSent ? (
-                <Chip tone="success">
-                  <CheckCircle2 className="h-3 w-3" />
-                  Sent
-                </Chip>
-              ) : (
-                <Button
-                  variant="secondary"
-                  className="!py-1 !text-xs"
-                  disabled={!view.reconciliationClean}
-                  title={
-                    !view.reconciliationClean
-                      ? "Resolve the item-level discrepancy first"
-                      : undefined
-                  }
-                  onClick={sendEndorsementConfirmed}
-                >
-                  Send
-                </Button>
-              )}
-            </div>
-          </Panel>
-
-          <Panel
-            title="Audit log (EP-11 / E&O record)"
-            subtitle="Every classification decision, appetite outcome, and reconciliation result — including appetite-unknown resolutions logged as a signal for Carrier Appetite Intelligence"
-            actions={<FoundationBadge kind="matching" />}
-          >
-            <ul className="divide-y divide-border">
-              {log.slice(0, 10).map((d, i) => (
-                <li key={i} className="flex items-start gap-3 py-3 text-sm">
-                  <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
-                  <div className="flex-1">
-                    <div>
-                      <b>{d.who}</b> — {d.what}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 text-[10px] text-muted-foreground">
-              Session-only for this prototype — feeds the same Feedback/Eval store pattern as other
-              workflows.
-            </div>
-          </Panel>
-        </div>
-      </div>
-
-      <LiveEndorsementsSection />
     </div>
   );
 }
@@ -5331,6 +3885,12 @@ function LiveEndorsementCard({
               {payload.premium_impact.proration_inputs.days_remaining} remaining.
             </div>
           )}
+          {payload.premium_impact.proration_inputs?.unusual_timing_flag && (
+            <div className="mt-2 flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 p-2 text-warn">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{payload.premium_impact.proration_inputs.unusual_timing_flag}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -5406,19 +3966,15 @@ function LiveEndorsementCard({
   );
 }
 
-function LiveEndorsementsSection() {
+/* ============================================================
+   7. Renewal Remarketing
+   ============================================================ */
+
+export function RenewalRemarketing() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newReviewOpen, setNewReviewOpen] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
-
-  const listQuery = useQuery({ queryKey: ["endorsement", "list"], queryFn: listEndorsement });
-  const items = listQuery.data ?? [];
-
-  const detailQuery = useQuery({
-    queryKey: ["endorsement", "detail", selectedId],
-    queryFn: () => getEndorsement(selectedId!),
-    enabled: Boolean(selectedId),
-  });
 
   function appendLog(who: string, what: string, ctx: string) {
     setLog((prev) => [
@@ -5433,60 +3989,102 @@ function LiveEndorsementsSection() {
     ]);
   }
 
+  const listQuery = useQuery({
+    queryKey: ["renewal-remarketing", "list"],
+    queryFn: listRenewalRemarketing,
+  });
+  const items = listQuery.data ?? [];
+
+  useEffect(() => {
+    if (!selectedId && listQuery.data && listQuery.data.length > 0) {
+      setSelectedId(listQuery.data[0].id);
+    }
+  }, [listQuery.data, selectedId]);
+
+  const detailQuery = useQuery({
+    queryKey: ["renewal-remarketing", "detail", selectedId],
+    queryFn: () => getRenewalRemarketing(selectedId!),
+    enabled: Boolean(selectedId),
+  });
+  const payload = detailQuery.data?.payload ?? null;
+
   const runMutation = useMutation({
-    mutationFn: (s: EndorsementFixtureScenario) => runEndorsement(s.ref),
+    mutationFn: (s: RenewalFixtureScenario) => runRenewalRemarketing(s.ref),
     onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["endorsement"] });
-      toast.success(`${s.label}: request processed`);
+      queryClient.invalidateQueries({ queryKey: ["renewal-remarketing"] });
+      toast.success(`${s.label}: review generated`);
+      appendLog("AI (Matching/Ranking Core)", "Renewal review generated", s.label);
       setSelectedId(item.id);
+      setNewReviewOpen(false);
     },
     onError: (err: unknown, s) =>
       toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
   });
 
   return (
-    <div className="mt-6 space-y-5">
-      <Panel
-        title="Live endorsements — wired to Backend-AI-OS"
-        subtitle="/api/es/endorsement — real Workflow_15 fixture scenarios (the panels above stay mocked, including the hand-off to Agent Copilot)"
-      >
-        <div className="flex flex-wrap gap-2">
-          {ENDORSEMENT_FIXTURE_SCENARIOS.map((s) => (
-            <Button
-              key={s.ref}
-              variant="secondary"
-              disabled={runMutation.isPending}
-              onClick={() => runMutation.mutate(s)}
-            >
-              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {s.label}
-            </Button>
-          ))}
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
+      <PageHeader
+        eyebrow="Workflow 07"
+        title="Renewal Remarketing"
+        description="Detects exposure and loss changes plus incumbent responsiveness on bound policies approaching renewal, and produces a graduated remarket recommendation."
+        actions={
+          <Button variant="primary" onClick={() => setNewReviewOpen((v) => !v)}>
+            <Sparkles className="h-4 w-4" />
+            New renewal review
+          </Button>
+        }
+      />
+
+      {newReviewOpen && (
+        <div className="mb-5">
+          <Panel
+            title="Start a new renewal review"
+            subtitle="Runs the real backend pipeline — POST /api/es/renewal-remarketing/run"
+            actions={
+              <Button variant="ghost" onClick={() => setNewReviewOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            <div className="flex flex-wrap gap-2">
+              {RENEWAL_FIXTURE_SCENARIOS.map((s) => (
+                <Button
+                  key={s.ref}
+                  variant="secondary"
+                  disabled={runMutation.isPending}
+                  onClick={() => runMutation.mutate(s)}
+                >
+                  {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {s.label}
+                </Button>
+              ))}
+            </div>
+          </Panel>
         </div>
-      </Panel>
+      )}
 
       {listQuery.isLoading && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading endorsement requests…
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading renewal reviews…
         </div>
       )}
       {listQuery.isError && (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load requests."}
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load reviews."}
         </div>
       )}
 
       {!listQuery.isLoading && !listQuery.isError && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
-          <Panel title="Endorsement requests" subtitle={`${items.length} generated`}>
+          <Panel title="Renewal pipeline" subtitle={`${items.length} generated`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No requests yet — run a scenario above.
+                No reviews yet — click "New renewal review" to run one of the 6 real scenarios.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -5516,13 +4114,13 @@ function LiveEndorsementsSection() {
             {!selectedId ? (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  Select a request from the list.
+                  Select a review from the list, or click "New renewal review."
                 </div>
               </Panel>
             ) : detailQuery.isLoading ? (
               <Panel>
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading request…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading review…
                 </div>
               </Panel>
             ) : detailQuery.isError ? (
@@ -5531,26 +4129,22 @@ function LiveEndorsementsSection() {
                   <AlertTriangle className="h-4 w-4" />
                   {detailQuery.error instanceof Error
                     ? detailQuery.error.message
-                    : "Failed to load request."}
+                    : "Failed to load review."}
                 </div>
               </Panel>
-            ) : detailQuery.data?.payload ? (
-              <LiveEndorsementCard
-                itemId={detailQuery.data.id}
-                payload={detailQuery.data.payload}
-                onActed={appendLog}
-              />
+            ) : payload ? (
+              <LiveRenewalCard itemId={detailQuery.data!.id} payload={payload} onActed={appendLog} />
             ) : (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  No request data for this item.
+                  No review data for this item.
                 </div>
               </Panel>
             )}
 
             <Panel
-              title="Activity (live section)"
-              subtitle="This session's real actions"
+              title="Decision log (E&O record)"
+              subtitle="Trigger level, remarket outcome, and final decision — this is what RR-08 reads next cycle"
               actions={<FoundationBadge kind="matching" />}
             >
               <ul className="divide-y divide-border">
@@ -5574,534 +4168,14 @@ function LiveEndorsementsSection() {
                   ))
                 )}
               </ul>
+              <div className="mt-3 text-[10px] text-muted-foreground">
+                Session-only for this prototype — feeds the same Feedback/Eval store pattern as
+                other workflows.
+              </div>
             </Panel>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   7. Renewal Remarketing
-   ============================================================ */
-
-type RemarketOverride = {
-  remarketedTimesInHistory?: number;
-  finalDecision?: "Approved" | "Non-renewed" | "Info requested";
-};
-
-// Same shape as deriveBinderState/deriveEndorsementState — plain data derivation.
-function deriveRemarketState(r: Remarket, ov: RemarketOverride) {
-  const daysSinceRequested = -(daysUntil(r.renewalTermsRequestedDate) ?? 0);
-  const nonResponseFlagged =
-    !r.renewalTermsReceivedDate && daysSinceRequested > r.renewalTermsWindowDays;
-  const remarketedTimesInHistory = ov.remarketedTimesInHistory ?? r.remarketedTimesInHistory;
-  const finalDecision = ov.finalDecision ?? null;
-  return { daysSinceRequested, nonResponseFlagged, remarketedTimesInHistory, finalDecision };
-}
-
-function usd(value: string): number | null {
-  if (!/\d/.test(value)) return null;
-  return Number(value.replace(/[^0-9.-]/g, ""));
-}
-
-export function RenewalRemarketing() {
-  const [selected, setSelected] = useState(remarketing[0].id);
-  const r = remarketing.find((x) => x.id === selected)!;
-  const [overrides, setOverrides] = useState<Record<string, RemarketOverride>>({});
-  const ov = overrides[r.id] ?? {};
-  const view = deriveRemarketState(r, ov);
-
-  const [log, setLog] = useState<LogEntry[]>(() => {
-    const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return [
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Trigger level URGENT_REMARKET (RR-04) · incumbent silent non-response flagged (RR-07)",
-        ctx: "RMK-24-4099 · Ridgeline Contractors, Inc.",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Remarket executed (FULL_REMARKET) — 2 of 3 markets quoted, 1 decline; incumbent's renewal offer remained most competitive",
-        ctx: "RMK-24-4101 · Highline Hospitality Group",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Trigger level FULL_REMARKET (RR-04) — loss ratio trend 33%→37%→42% plus new location exposure",
-        ctx: "RMK-24-4101 · Highline Hospitality Group",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Remarket executed (LIGHT_REMARKET_CHECK) — 2 of 2 markets quoted, 1 exception-based, incumbent's renewal offer remained most competitive",
-        ctx: "RMK-24-4102 · Palmetto Cold Storage LLC",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Trigger level LIGHT_REMARKET_CHECK (RR-04) — payroll +14%, loss ratio trend 31%→34%→38%",
-        ctx: "RMK-24-4102 · Palmetto Cold Storage LLC",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Trigger level NO_REMARKET (RR-04) — stable exposure and loss trend, incumbent responsive",
-        ctx: "RMK-24-4100 · Cedar Grove Assisted Living",
-        conf: "—",
-      },
-      {
-        at,
-        who: "AI (Matching/Ranking Core)",
-        what: "Trigger level NO_REMARKET (RR-04) — clean loss trend, incumbent responsive, monitoring the cyber sublimit ask",
-        ctx: "RMK-24-4098 · Copperline Data Center Ops",
-        conf: "—",
-      },
-    ];
-  });
-
-  function appendLog(who: string, what: string, ctx: string, conf = "—") {
-    setLog((prev) => [
-      {
-        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        who,
-        what,
-        ctx,
-        conf,
-      },
-      ...prev,
-    ]);
-  }
-
-  function patch(remarketId: string, patchOv: RemarketOverride) {
-    setOverrides((prev) => ({ ...prev, [remarketId]: { ...prev[remarketId], ...patchOv } }));
-  }
-
-  function finalizeDecision(decision: "Approved" | "Non-renewed" | "Info requested") {
-    patch(r.id, { finalDecision: decision });
-    appendLog(
-      "Sam D. (Broker)",
-      `Final renewal decision (RR-09): ${decision}`,
-      `${r.id} · ${r.insured}`,
-    );
-    if (decision === "Approved" && r.triggerLevel !== "NO_REMARKET") {
-      const next = view.remarketedTimesInHistory + 1;
-      patch(r.id, { remarketedTimesInHistory: next });
-      appendLog(
-        "AI (Matching/Ranking Core)",
-        `History updated (RR-08 write) — remarketed ${next} time${next === 1 ? "" : "s"} in the last 3 years`,
-        `${r.id} · ${r.insured}`,
-      );
-    }
-  }
-
-  function reinvokeMarketMatching() {
-    appendLog(
-      "Sam D. (Broker)",
-      "Approved — re-invoked Submission Market Matching (RR-05) against the account's current profile",
-      `${r.id} · ${r.insured}`,
-    );
-    toast("Handoff logged — Submission Market Matching would re-run against the current profile.");
-  }
-
-  function initiateUrgentRemarket() {
-    appendLog(
-      "Sam D. (Broker)",
-      "Initiated remarket immediately (URGENT), in parallel with continued incumbent follow-up",
-      `${r.id} · ${r.insured}`,
-    );
-    toast("Handoff logged — remarket initiated now, incumbent follow-up continues in parallel.");
-  }
-
-  const triggerTone =
-    r.triggerLevel === "NO_REMARKET"
-      ? "success"
-      : r.triggerLevel === "LIGHT_REMARKET_CHECK"
-        ? "accent"
-        : r.triggerLevel === "FULL_REMARKET"
-          ? "warn"
-          : "danger";
-
-  return (
-    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
-      <PageHeader
-        eyebrow="Workflow 07"
-        title="Renewal Remarketing"
-        description="Detects exposure and loss changes plus incumbent responsiveness on bound policies approaching renewal, and produces a graduated remarket recommendation."
-        actions={
-          <Button variant="primary">
-            <Sparkles className="h-4 w-4" />
-            Run remarket review
-          </Button>
-        }
-      />
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,2.1fr)]">
-        <Panel title="Renewal pipeline" subtitle="Next 60 days">
-          <ul className="divide-y divide-border">
-            {remarketing.map((row) => (
-              <button
-                key={row.id}
-                onClick={() => setSelected(row.id)}
-                className={`flex w-full flex-col gap-1 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${selected === row.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
-              >
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{row.insured}</span>
-                  <span className="text-xs text-accent">{row.change}</span>
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>Exp {row.expiring}</span>
-                  <span>LR {row.lossRatio}</span>
-                </div>
-                <Chip
-                  tone={
-                    row.triggerLevel === "NO_REMARKET"
-                      ? "success"
-                      : row.triggerLevel === "LIGHT_REMARKET_CHECK"
-                        ? "accent"
-                        : row.triggerLevel === "FULL_REMARKET"
-                          ? "warn"
-                          : "danger"
-                  }
-                >
-                  {row.triggerLabel}
-                </Chip>
-              </button>
-            ))}
-          </ul>
-        </Panel>
-
-        <div className="space-y-5">
-          <Panel>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-[11px] font-mono text-muted-foreground">
-                  {r.id} · Incumbent {r.incumbentCarrier}
-                </div>
-                <h2 className="mt-1 font-serif text-2xl">{r.insured}</h2>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Expires {r.expiring} · Loss ratio 5yr {r.lossRatio}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" onClick={() => finalizeDecision("Info requested")}>
-                  Request information
-                </Button>
-                <Button variant="danger" onClick={() => finalizeDecision("Non-renewed")}>
-                  Non-renew
-                </Button>
-                <Button variant="primary" onClick={() => finalizeDecision("Approved")}>
-                  Approve recommendation
-                </Button>
-              </div>
-            </div>
-            {view.finalDecision && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 p-2 text-xs">
-                <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                Final renewal decision recorded: {view.finalDecision} (RR-09, logged below)
-              </div>
-            )}
-          </Panel>
-
-          <Panel
-            title="Side-by-side comparison"
-            subtitle="Prior term vs. renewal submission"
-            actions={<FoundationBadge kind="extraction" />}
-          >
-            <p className="mb-2 text-[11px] text-muted-foreground">
-              Current profile built from the bound record (Binder & Issuance) plus mid-term
-              endorsement history (Endorsement Processing) — not just the original bind terms.
-            </p>
-            <div className="grid grid-cols-3 gap-0 overflow-hidden rounded-lg border border-border text-sm">
-              <div className="bg-secondary/60 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Attribute
-              </div>
-              <div className="bg-secondary/60 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Prior term
-              </div>
-              <div className="bg-secondary/60 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Renewal
-              </div>
-              <Row label="Named insured" prior={r.insured} now={r.insured} />
-              <Row label="Locations" prior="12" now="14" change="+2" />
-              <Row label="TIV" prior="$38.4M" now="$42.8M" change="+11.5%" />
-              <Row label="Payroll" prior="$4.2M" now="$4.8M" change="+14.3%" />
-              <Row label="Sprinklered TIV" prior="88%" now="92%" change="+4pp" positive />
-              <Row
-                label="Loss ratio trend (RR-02)"
-                prior={r.lossRatioHistory[0]}
-                now={r.lossRatioHistory.join(" → ")}
-              />
-              <Row
-                label="Incumbent responsiveness"
-                prior="—"
-                now={r.incumbentResponsive ? "Responsive" : "Non-responsive — see RR-07 below"}
-              />
-              <Row
-                label="Indicated premium"
-                prior={r.priorPremium}
-                now={r.indicated}
-                change={r.change}
-                strong
-              />
-            </div>
-          </Panel>
-
-          <div className="grid gap-5 md:grid-cols-2">
-            <Panel
-              title="AI remarket recommendation"
-              actions={<Chip tone={triggerTone}>{r.triggerLabel}</Chip>}
-            >
-              <p className="text-sm text-foreground">
-                {r.triggerLevel === "NO_REMARKET" &&
-                  "Exposure and loss trend are stable and the incumbent remains responsive — recommend renewing as-is with no remarket effort."}
-                {r.triggerLevel === "LIGHT_REMARKET_CHECK" &&
-                  "Rate change and exposure growth justify a light competitive check against 1–2 alternate markets, without disrupting the incumbent relationship."}
-                {r.triggerLevel === "FULL_REMARKET" &&
-                  "Loss trend deterioration plus a real exposure change justify shopping the full panel before the expiring date, while the incumbent stays responsive."}
-                {r.triggerLevel === "URGENT_REMARKET" &&
-                  "Incumbent has gone non-responsive and loss trend has deteriorated — this is a lapse-risk situation. Elevated priority: initiate a remarket immediately."}
-              </p>
-              <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
-                <li>· Flag: {r.flag}</li>
-                <li>
-                  · Remarketing-history weighting (RR-08): this account has been remarketed{" "}
-                  {view.remarketedTimesInHistory} time
-                  {view.remarketedTimesInHistory === 1 ? "" : "s"} in the last 3 years — written by
-                  this workflow's own decision log below, not a separately maintained counter.
-                </li>
-              </ul>
-            </Panel>
-            <Panel title="Retail agent context">
-              <div className="text-sm">
-                <div className="font-medium">Ana Ruiz · Marsh Southeast</div>
-                <div className="text-[11px] text-muted-foreground">
-                  Agent for 4 years · 28 bound placements
-                </div>
-              </div>
-              <div className="mt-3 rounded-lg border border-border bg-secondary/40 p-3 text-sm text-ink-soft">
-                "Insured is expanding into a third Jacksonville location. Would appreciate spoilage
-                sub-limit confirmation and a 15-day extension if bind slips past the expiring date."
-              </div>
-              <div className="mt-3 flex gap-2">
-                <Button variant="secondary">
-                  <MessageSquare className="h-4 w-4" />
-                  Reply in Copilot
-                </Button>
-                <Button variant="secondary">View full history</Button>
-              </div>
-            </Panel>
-          </div>
-
-          <Panel title="Incumbent monitoring (RR-03 / RR-07)">
-            <div className="flex items-center gap-2 text-sm">
-              {r.incumbentAppetiteRecheck.status === "Confirmed" ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 shrink-0 text-warn" />
-              )}
-              Incumbent appetite recheck: {r.incumbentAppetiteRecheck.status}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {r.incumbentAppetiteRecheck.reasoning}
-            </p>
-            {view.nonResponseFlagged ? (
-              <div className="mt-3 flex items-start gap-2 rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                <div>
-                  <div className="font-medium text-destructive">Silent non-response (RR-07)</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Renewal terms requested {r.renewalTermsRequestedDate}, {view.daysSinceRequested}{" "}
-                    days elapsed against a {r.renewalTermsWindowDays}-day window despite broker
-                    follow-up — nothing received.
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-3 text-xs text-muted-foreground">
-                Renewal terms{" "}
-                {r.renewalTermsReceivedDate
-                  ? `received ${r.renewalTermsReceivedDate}`
-                  : "still within the expected window"}
-                .
-              </div>
-            )}
-          </Panel>
-
-          <Panel title="Broker review routing (RR-06 branches)">
-            {r.triggerLevel === "NO_REMARKET" && (
-              <div className="rounded-lg border border-success/30 bg-success/5 p-3 text-sm">
-                <div className="flex items-center gap-2 font-medium text-success">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  (a) No remarket — review incumbent terms and accept
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  No remarket effort needed this cycle. Use the header actions below to record the
-                  final decision.
-                </p>
-              </div>
-            )}
-            {(r.triggerLevel === "LIGHT_REMARKET_CHECK" || r.triggerLevel === "FULL_REMARKET") && (
-              <div className="rounded-lg border-2 border-warn/40 bg-warn/5 p-3 text-sm">
-                <div className="flex items-center gap-2 font-medium text-warn">
-                  <TrendingUp className="h-4 w-4 shrink-0" />
-                  (b) {r.triggerLevel === "LIGHT_REMARKET_CHECK"
-                    ? "Light check"
-                    : "Full remarket"}{" "}
-                  — approve to re-invoke Market Matching
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Approving re-invokes Submission Market Matching (RR-05) against the account's
-                  current profile.
-                </p>
-                <Button
-                  variant="secondary"
-                  className="mt-3 !py-1 !text-xs"
-                  onClick={reinvokeMarketMatching}
-                >
-                  Approve — re-invoke Market Matching
-                </Button>
-              </div>
-            )}
-            {r.triggerLevel === "URGENT_REMARKET" && (
-              <div className="rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3 text-sm">
-                <div className="flex items-center gap-2 font-medium text-destructive">
-                  <Ban className="h-4 w-4 shrink-0" />
-                  (c) Urgent — elevated priority, lapse risk
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Broker should initiate a remarket immediately, in parallel with continued
-                  incumbent follow-up — don't wait for a response before shopping the account.
-                </p>
-                <Button
-                  variant="danger"
-                  className="mt-3 !py-1 !text-xs"
-                  onClick={initiateUrgentRemarket}
-                >
-                  Initiate remarket now
-                </Button>
-              </div>
-            )}
-          </Panel>
-
-          <Panel
-            title="Remarket comparison — alternatives vs. incumbent renewal offer (RR-06)"
-            subtitle="Reuses Quote Comparison's normalization discipline"
-          >
-            {r.remarketQuotes.length === 0 ? (
-              <div className="text-sm text-muted-foreground">
-                No remarket executed this cycle — {r.triggerLevel}.
-              </div>
-            ) : (
-              <>
-                <div className="mb-3 rounded-lg border border-border bg-secondary/30 p-3 text-sm">
-                  <div className="font-medium">{r.incumbentCarrier} — renewal offer</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Premium {r.indicated} (prior {r.priorPremium}, {r.change})
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                      <tr>
-                        <th className="py-2 text-left">Carrier</th>
-                        <th className="py-2 text-right">Premium</th>
-                        <th className="py-2 text-right">vs. incumbent</th>
-                        <th className="py-2 text-right">Deductible</th>
-                        <th className="py-2 text-left pl-4">Limit</th>
-                        <th className="py-2 text-left pl-4">Materiality</th>
-                        <th className="py-2 text-left pl-4">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {r.remarketQuotes.map((q) => {
-                        const incumbentValue = usd(r.indicated);
-                        const quoteValue = usd(q.premium);
-                        const delta =
-                          incumbentValue !== null && quoteValue !== null
-                            ? quoteValue - incumbentValue
-                            : null;
-                        return (
-                          <tr
-                            key={q.carrier}
-                            className={`transition-colors hover:bg-secondary/40 ${q.status === "Declined" ? "opacity-50" : ""}`}
-                          >
-                            <td className="py-2.5 font-medium">
-                              <div className="flex items-center gap-2">
-                                {q.carrier}
-                                {q.exceptionBased && <Chip tone="warn">Exception-based</Chip>}
-                              </div>
-                            </td>
-                            <td className="py-2.5 text-right font-mono">{q.premium}</td>
-                            <td className="py-2.5 text-right font-mono text-xs">
-                              {delta === null
-                                ? "—"
-                                : `${delta < 0 ? "-" : "+"}$${Math.abs(delta).toLocaleString()}`}
-                            </td>
-                            <td className="py-2.5 text-right font-mono">{q.deductible}</td>
-                            <td className="py-2.5 pl-4 text-xs">{q.limit}</td>
-                            <td className="py-2.5 pl-4">
-                              <Chip
-                                tone={
-                                  q.materiality === "Deal-breaker"
-                                    ? "danger"
-                                    : q.materiality === "Material"
-                                      ? "warn"
-                                      : "success"
-                                }
-                              >
-                                {q.materiality}
-                              </Chip>
-                            </td>
-                            <td className="py-2.5 pl-4">
-                              <Chip tone={q.status === "Quoted" ? "accent" : "danger"}>
-                                {q.status}
-                              </Chip>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </Panel>
-
-          <Panel
-            title="Decision log (RR-09 / E&O record)"
-            subtitle="Trigger level, remarket outcome, and final decision — this is what RR-08 reads next cycle"
-            actions={<FoundationBadge kind="matching" />}
-          >
-            <ul className="divide-y divide-border">
-              {log.slice(0, 10).map((d, i) => (
-                <li key={i} className="flex items-start gap-3 py-3 text-sm">
-                  <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
-                  <div className="flex-1">
-                    <div>
-                      <b>{d.who}</b> — {d.what}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 text-[10px] text-muted-foreground">
-              Session-only for this prototype — feeds the same Feedback/Eval store pattern as other
-              workflows.
-            </div>
-          </Panel>
-        </div>
-      </div>
-
-      <LiveRenewalsSection />
     </div>
   );
 }
@@ -6227,6 +4301,15 @@ function LiveRenewalCard({
         }`}
       >
         {payload.trigger_decision.reasoning.summary}
+        {payload.trigger_decision.reasoning.citations.length > 0 && (
+          <ul className="mt-2 space-y-0.5 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+            {payload.trigger_decision.reasoning.citations.map((c, i) => (
+              <li key={i}>
+                {c.claim} <span className="font-mono">({c.source})</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="mt-4 grid gap-2 text-[11px] text-muted-foreground sm:grid-cols-2">
@@ -6310,22 +4393,15 @@ function LiveRenewalCard({
   );
 }
 
-function LiveRenewalsSection() {
+/* ============================================================
+   8. Diligent Search & Compliance Documentation
+   ============================================================ */
+
+export function DiligentSearchCompliance() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newCheckOpen, setNewCheckOpen] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
-
-  const listQuery = useQuery({
-    queryKey: ["renewal-remarketing", "list"],
-    queryFn: listRenewalRemarketing,
-  });
-  const items = listQuery.data ?? [];
-
-  const detailQuery = useQuery({
-    queryKey: ["renewal-remarketing", "detail", selectedId],
-    queryFn: () => getRenewalRemarketing(selectedId!),
-    enabled: Boolean(selectedId),
-  });
 
   function appendLog(who: string, what: string, ctx: string) {
     setLog((prev) => [
@@ -6340,60 +4416,114 @@ function LiveRenewalsSection() {
     ]);
   }
 
+  const listQuery = useQuery({
+    queryKey: ["diligent-search", "list"],
+    queryFn: listDiligentSearch,
+  });
+  const items = listQuery.data ?? [];
+
+  useEffect(() => {
+    if (!selectedId && listQuery.data && listQuery.data.length > 0) {
+      setSelectedId(listQuery.data[0].id);
+    }
+  }, [listQuery.data, selectedId]);
+
+  const detailQuery = useQuery({
+    queryKey: ["diligent-search", "detail", selectedId],
+    queryFn: () => getDiligentSearch(selectedId!),
+    enabled: Boolean(selectedId),
+  });
+  const payload = detailQuery.data?.payload ?? null;
+
   const runMutation = useMutation({
-    mutationFn: (s: RenewalFixtureScenario) => runRenewalRemarketing(s.ref),
+    mutationFn: (s: ComplianceFixtureScenario) => runDiligentSearch(s.ref),
     onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["renewal-remarketing"] });
-      toast.success(`${s.label}: review generated`);
+      queryClient.invalidateQueries({ queryKey: ["diligent-search"] });
+      toast.success(`${s.label}: determination generated`);
+      appendLog("AI (Matching/Ranking Core)", "Compliance determination generated", s.label);
       setSelectedId(item.id);
+      setNewCheckOpen(false);
     },
     onError: (err: unknown, s) =>
       toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
   });
 
   return (
-    <div className="mt-6 space-y-5">
-      <Panel
-        title="Live renewal reviews — wired to Backend-AI-OS"
-        subtitle="/api/es/renewal-remarketing — real Workflow_16 fixture scenarios (the panels above stay mocked)"
-      >
-        <div className="flex flex-wrap gap-2">
-          {RENEWAL_FIXTURE_SCENARIOS.map((s) => (
-            <Button
-              key={s.ref}
-              variant="secondary"
-              disabled={runMutation.isPending}
-              onClick={() => runMutation.mutate(s)}
-            >
-              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {s.label}
-            </Button>
-          ))}
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
+      <PageHeader
+        eyebrow="Workflow 08"
+        title="Diligent Search & Compliance Documentation"
+        description="Per-state diligent-search requirements, declination evidence sufficiency, and compliant surplus-lines documentation — gated so nothing generates on incomplete evidence. Submissions enter this workflow from Submission Market Matching's MM-07 diligent-search flag — fully processed here, not just logged upstream."
+        actions={
+          <Button variant="primary" onClick={() => setNewCheckOpen((v) => !v)}>
+            <FileSearch className="h-4 w-4" />
+            New compliance check
+          </Button>
+        }
+      />
+
+      <div className="mb-5 flex items-start gap-3 rounded-xl border border-border bg-secondary/40 p-4 text-sm">
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+        <div>
+          <div className="font-medium">Zero-tolerance gate</div>
+          <div className="text-[11px] text-muted-foreground">
+            This workflow will not generate surplus-lines documentation unless every required
+            declination has sufficient written evidence on file, or the state is confirmed exempt
+            for this class. No exceptions.
+          </div>
         </div>
-      </Panel>
+      </div>
+
+      {newCheckOpen && (
+        <div className="mb-5">
+          <Panel
+            title="Start a new compliance check"
+            subtitle="Runs the real backend pipeline — POST /api/es/diligent-search/run"
+            actions={
+              <Button variant="ghost" onClick={() => setNewCheckOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            <div className="flex flex-wrap gap-2">
+              {COMPLIANCE_FIXTURE_SCENARIOS.map((s) => (
+                <Button
+                  key={s.ref}
+                  variant="secondary"
+                  disabled={runMutation.isPending}
+                  onClick={() => runMutation.mutate(s)}
+                >
+                  {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {s.label}
+                </Button>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      )}
 
       {listQuery.isLoading && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading renewal reviews…
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading compliance records…
         </div>
       )}
       {listQuery.isError && (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load reviews."}
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load records."}
         </div>
       )}
 
       {!listQuery.isLoading && !listQuery.isError && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
-          <Panel title="Renewal reviews" subtitle={`${items.length} generated`}>
+          <Panel title="Diligent search queue" subtitle={`${items.length} generated`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No reviews yet — run a scenario above.
+                No records yet — click "New compliance check" to run one of the 4 real scenarios.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -6423,13 +4553,13 @@ function LiveRenewalsSection() {
             {!selectedId ? (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  Select a review from the list.
+                  Select a record from the list, or click "New compliance check."
                 </div>
               </Panel>
             ) : detailQuery.isLoading ? (
               <Panel>
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading review…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading record…
                 </div>
               </Panel>
             ) : detailQuery.isError ? (
@@ -6438,26 +4568,26 @@ function LiveRenewalsSection() {
                   <AlertTriangle className="h-4 w-4" />
                   {detailQuery.error instanceof Error
                     ? detailQuery.error.message
-                    : "Failed to load review."}
+                    : "Failed to load record."}
                 </div>
               </Panel>
-            ) : detailQuery.data?.payload ? (
-              <LiveRenewalCard
-                itemId={detailQuery.data.id}
-                payload={detailQuery.data.payload}
+            ) : payload ? (
+              <LiveComplianceCard
+                itemId={detailQuery.data!.id}
+                payload={payload}
                 onActed={appendLog}
               />
             ) : (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  No review data for this item.
+                  No record data for this item.
                 </div>
               </Panel>
             )}
 
             <Panel
-              title="Activity (live section)"
-              subtitle="This session's real actions"
+              title="Activity"
+              subtitle="Every classification decision and reconciliation outcome, this session"
               actions={<FoundationBadge kind="matching" />}
             >
               <ul className="divide-y divide-border">
@@ -6481,357 +4611,14 @@ function LiveRenewalsSection() {
                   ))
                 )}
               </ul>
+              <div className="mt-3 text-[10px] text-muted-foreground">
+                Session-only for this prototype — feeds the same Feedback/Eval store pattern as
+                other workflows.
+              </div>
             </Panel>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   8. Diligent Search & Compliance Documentation
-   ============================================================ */
-
-const STATUS_PRIORITY: DiligentSearchStateDetail["status"][] = [
-  "Gathering evidence",
-  "Ready to file",
-  "Filed",
-  "Exempt",
-];
-
-// Worst-of-states summary for the queue chip — derived, not stored twice.
-function overallStatus(record: DiligentSearchRecord): DiligentSearchStateDetail["status"] {
-  return record.states.reduce(
-    (worst, s) =>
-      STATUS_PRIORITY.indexOf(s.status) < STATUS_PRIORITY.indexOf(worst) ? s.status : worst,
-    "Exempt" as DiligentSearchStateDetail["status"],
-  );
-}
-
-function stateSatisfied(s: DiligentSearchStateDetail) {
-  return s.requirementStatus !== "Required" || s.evidenceSufficient;
-}
-
-export function DiligentSearchCompliance() {
-  const [sel, setSel] = useState(diligentSearch[0].id);
-  const d = diligentSearch.find((x) => x.id === sel)!;
-  const [selState, setSelState] = useState<string | null>(null);
-  const [escalated, setEscalated] = useState<Record<string, boolean>>({});
-
-  const activeStateName =
-    selState && d.states.some((s) => s.state === selState) ? selState : d.states[0].state;
-  const state = d.states.find((s) => s.state === activeStateName)!;
-  const escalationKey = `${d.id}-${state.state}`;
-  const isEscalated = escalated[escalationKey] ?? state.escalation?.escalated ?? false;
-
-  const unsatisfiedStates = d.states.filter((s) => !stateSatisfied(s));
-  const canGenerate = unsatisfiedStates.length === 0;
-
-  return (
-    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
-      <PageHeader
-        eyebrow="Workflow 08"
-        title="Diligent Search & Compliance Documentation"
-        description="Per-state diligent-search requirements, declination evidence sufficiency, and compliant surplus-lines documentation — gated so nothing generates on incomplete evidence. Submissions enter this workflow from Submission Market Matching's MM-07 diligent-search flag — fully processed here, not just logged upstream."
-        actions={
-          <Button variant="primary" disabled={!canGenerate}>
-            <FileSearch className="h-4 w-4" />
-            Generate documentation
-          </Button>
-        }
-      />
-
-      <div className="mb-5 flex items-start gap-3 rounded-xl border border-border bg-secondary/40 p-4 text-sm">
-        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-        <div>
-          <div className="font-medium">Zero-tolerance gate</div>
-          <div className="text-[11px] text-muted-foreground">
-            This workflow will not generate surplus-lines documentation unless every required
-            declination has sufficient written evidence on file, or the state is confirmed exempt
-            for this class. No exceptions.
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-        <Panel title="Diligent search queue">
-          <ul className="divide-y divide-border">
-            {diligentSearch.map((r) => {
-              const rStatus = overallStatus(r);
-              return (
-                <button
-                  key={r.id}
-                  onClick={() => {
-                    setSel(r.id);
-                    setSelState(null);
-                  }}
-                  className={`w-full py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${sel === r.id ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
-                >
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{r.insured}</span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {r.states.length > 1
-                        ? `${r.states[0].state} +${r.states.length - 1} more`
-                        : r.states[0].state}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {r.id} ·{" "}
-                    {r.states.length > 1
-                      ? `${r.states.filter(stateSatisfied).length} of ${r.states.length} states clear`
-                      : `${r.states[0].declinationsOnFile} of ${r.states[0].requiredDeclinations} declinations on file`}
-                  </div>
-                  <div className="mt-1">
-                    <Chip
-                      tone={
-                        rStatus === "Filed" || rStatus === "Exempt"
-                          ? "success"
-                          : rStatus === "Ready to file"
-                            ? "accent"
-                            : "warn"
-                      }
-                    >
-                      {rStatus}
-                    </Chip>
-                  </div>
-                </button>
-              );
-            })}
-          </ul>
-        </Panel>
-
-        <div className="space-y-5">
-          <Panel>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-[11px] font-mono text-muted-foreground">
-                  {d.id} · {d.states.length} state{d.states.length > 1 ? "s" : ""}
-                </div>
-                <h2 className="mt-1 font-serif text-2xl">{d.insured}</h2>
-              </div>
-              <Chip
-                tone={
-                  overallStatus(d) === "Filed" || overallStatus(d) === "Exempt"
-                    ? "success"
-                    : overallStatus(d) === "Ready to file"
-                      ? "accent"
-                      : "warn"
-                }
-              >
-                {overallStatus(d)}
-              </Chip>
-            </div>
-          </Panel>
-
-          <Panel
-            title="Per-state breakdown (DS-01 / DS-02)"
-            actions={<FoundationBadge kind="matching" />}
-          >
-            <ul className="divide-y divide-border rounded-lg border border-border">
-              {d.states.map((s) => (
-                <li key={s.state}>
-                  <button
-                    onClick={() => setSelState(s.state)}
-                    className={`flex w-full items-start justify-between gap-3 p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${s.state === activeStateName ? "bg-secondary/50" : "hover:bg-secondary/30"}`}
-                  >
-                    <div>
-                      <div className="font-medium">{s.state}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {s.requirementStatus === "Required"
-                          ? `Requires ${s.requiredDeclinations} declinations (DS-01)`
-                          : s.requirementStatus === "Export-list eligible"
-                            ? "Export-list eligible — no declinations needed (DS-02)"
-                            : "Not required for this class/TIV (DS-01)"}
-                      </div>
-                    </div>
-                    <Chip
-                      tone={
-                        s.status === "Filed" || s.status === "Exempt"
-                          ? "success"
-                          : s.status === "Ready to file"
-                            ? "accent"
-                            : "warn"
-                      }
-                    >
-                      {s.status}
-                    </Chip>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </Panel>
-
-          <Panel
-            title={`${state.state} requirement`}
-            subtitle={
-              d.states.length > 1 ? "Selected state — click another above to switch" : undefined
-            }
-          >
-            {state.requirementStatus !== "Required" ? (
-              <p className="text-sm text-foreground">
-                {state.requirementStatus === "Export-list eligible"
-                  ? `${state.state} allows this class onto its export list — pre-approved for non-admitted placement without a declination search (DS-02).`
-                  : `${state.state} does not require diligent-search documentation for this class of business at this TIV — confirmed not required against the current per-state requirement reference (DS-01).`}
-              </p>
-            ) : (
-              <p className="text-sm text-foreground">
-                {state.state} requires <b>{state.requiredDeclinations} declinations</b> from
-                admitted markets before this risk can be placed non-admitted (DS-01).{" "}
-                {state.declinationsOnFile} of {state.requiredDeclinations} are on file with
-                sufficient written evidence.
-              </p>
-            )}
-          </Panel>
-
-          {state.requirementStatus === "Required" && (
-            <Panel title="Declination evidence tracker">
-              <ul className="divide-y divide-border rounded-lg border border-border">
-                {Array.from({ length: state.requiredDeclinations }).map((_, i) => {
-                  const has = i < state.declinationsOnFile;
-                  const sufficient =
-                    has && (state.evidenceSufficient || i < state.declinationsOnFile - 1);
-                  return (
-                    <li key={i} className="flex items-start gap-3 p-3 text-sm">
-                      {has ? (
-                        sufficient ? (
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                        ) : (
-                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-                        )
-                      ) : (
-                        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <div className="flex-1">
-                        <div className="font-medium">Declination {i + 1}</div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {has
-                            ? sufficient
-                              ? "Written evidence on file — sufficient"
-                              : "On file but evidence insufficient — see missing evidence detail below"
-                            : "Not yet received"}
-                        </div>
-                      </div>
-                      {!has && (
-                        <Button variant="secondary" className="!py-1 !text-xs">
-                          Chase market
-                        </Button>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </Panel>
-          )}
-
-          {state.missingDeclinations.length > 0 && (
-            <Panel title="Missing evidence detail">
-              <ul className="space-y-3">
-                {state.missingDeclinations.map((md) => (
-                  <li
-                    key={md.market}
-                    className="rounded-lg border-2 border-warn/40 bg-warn/5 p-3 text-sm"
-                  >
-                    <div className="flex items-center gap-2 font-medium text-warn">
-                      <AlertTriangle className="h-4 w-4 shrink-0" />
-                      {md.market}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      <b>What's wrong:</b> {md.issue}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      <b>Needed to satisfy {state.state}'s minimum:</b> {md.neededEvidence}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {state.escalation && (
-                <div className="mt-3 rounded-lg border border-border p-3 text-sm">
-                  <div className="flex items-center gap-2 font-medium">
-                    <Gavel className="h-4 w-4 shrink-0 text-accent" />
-                    Ambiguous determination
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{state.escalation.reason}</p>
-                  {isEscalated ? (
-                    <div className="mt-2">
-                      <Chip tone="accent">Escalated to compliance — awaiting legal review</Chip>
-                    </div>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      className="mt-2 !py-1 !text-xs"
-                      onClick={() => setEscalated((prev) => ({ ...prev, [escalationKey]: true }))}
-                    >
-                      <Gavel className="h-3.5 w-3.5" />
-                      Escalate to compliance
-                    </Button>
-                  )}
-                </div>
-              )}
-            </Panel>
-          )}
-
-          <Panel
-            title="Record retention (DS-05)"
-            subtitle="Illustrative reference — verify against current state statute text"
-          >
-            <div className="flex items-start gap-2 rounded-lg border border-border p-3 text-sm">
-              <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              <div>
-                <div className="font-medium">{state.retention.period}</div>
-                <div className="text-[11px] text-muted-foreground">{state.retention.rule}</div>
-                <div className="mt-1 text-[11px] text-muted-foreground">
-                  The final record (or exemption determination) for {state.state} is retained
-                  accordingly once filed or confirmed exempt.
-                </div>
-              </div>
-            </div>
-          </Panel>
-
-          <Panel title="Compliant documentation">
-            {canGenerate ? (
-              <div className="rounded-xl border-2 border-success/40 bg-success/5 p-4">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-success" />
-                  <div className="font-serif text-lg">Ready to generate</div>
-                </div>
-                <p className="mt-2 text-sm">
-                  Surplus lines affidavit and diligent-search record will cite every declination on
-                  file with source and date. Nothing is generated from summary or verbal evidence.
-                </p>
-                <div className="mt-3">
-                  <Button variant="primary">
-                    Generate affidavit <FileSearch className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border-2 border-warn/40 bg-warn/5 p-4">
-                <div className="flex items-center gap-2">
-                  <Ban className="h-5 w-5 text-warn" />
-                  <div className="font-serif text-lg">Generation blocked</div>
-                </div>
-                <p className="mt-2 text-sm">
-                  {unsatisfiedStates.map((s) => s.state).join(", ")} still{" "}
-                  {unsatisfiedStates.length > 1 ? "need" : "needs"} sufficient evidence before
-                  documentation can be generated
-                  {d.states.length > unsatisfiedStates.length
-                    ? ` — ${d.states
-                        .filter(stateSatisfied)
-                        .map((s) => s.state)
-                        .join(
-                          ", ",
-                        )} ${d.states.filter(stateSatisfied).length > 1 ? "are" : "is"} already clear`
-                    : ""}
-                  . This gate cannot be overridden from this screen.
-                </p>
-              </div>
-            )}
-          </Panel>
-        </div>
-      </div>
-
-      <LiveComplianceSection />
     </div>
   );
 }
@@ -7029,20 +4816,26 @@ function LiveComplianceCard({
   );
 }
 
-function LiveComplianceSection() {
+/* ============================================================
+   9. Carrier Appetite Intelligence Tracking
+   ============================================================ */
+
+export function CarrierAppetiteIntelligence() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const listQuery = useQuery({
-    queryKey: ["diligent-search", "list"],
-    queryFn: listDiligentSearch,
+    queryKey: ["carrier-appetite-intelligence", "list"],
+    queryFn: listCarrierAppetiteIntelligence,
   });
   const items = listQuery.data ?? [];
+  const suppressedCount = items.filter((i) => i.payload?.status === "SUPPRESSED").length;
 
   const detailQuery = useQuery({
-    queryKey: ["diligent-search", "detail", selectedId],
-    queryFn: () => getDiligentSearch(selectedId!),
+    queryKey: ["carrier-appetite-intelligence", "detail", selectedId],
+    queryFn: () => getCarrierAppetiteIntelligence(selectedId!),
     enabled: Boolean(selectedId),
   });
 
@@ -7060,59 +4853,159 @@ function LiveComplianceSection() {
   }
 
   const runMutation = useMutation({
-    mutationFn: (s: ComplianceFixtureScenario) => runDiligentSearch(s.ref),
+    mutationFn: (s: AppetiteFixtureScenario) => runCarrierAppetiteIntelligence(s.ref),
     onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["diligent-search"] });
-      toast.success(`${s.label}: determination generated`);
+      queryClient.invalidateQueries({ queryKey: ["carrier-appetite-intelligence"] });
+      appendLog(
+        "You",
+        `Ran appetite check — ${s.label}`,
+        `→ ${item.payload?.pattern_type.replace(/_/g, " ") ?? "evaluated"}`,
+      );
+      toast.success(`${s.label}: evaluation complete`);
       setSelectedId(item.id);
+      setPickerOpen(false);
     },
     onError: (err: unknown, s) =>
       toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
   });
 
+  const runLiveMutation = useMutation({
+    mutationFn: runCarrierAppetiteIntelligenceLive,
+    onSuccess: (createdItems) => {
+      queryClient.invalidateQueries({ queryKey: ["carrier-appetite-intelligence"] });
+      if (createdItems.length === 0) {
+        toast.success("No real declination signals logged yet — run some Quote Comparison scenarios first.");
+        return;
+      }
+      appendLog(
+        "You",
+        "Checked live signals",
+        `→ ${createdItems.length} carrier${createdItems.length === 1 ? "" : "s"} evaluated from real Quote Comparison data`,
+      );
+      toast.success(`${createdItems.length} carrier${createdItems.length === 1 ? "" : "s"} evaluated from live data`);
+      setSelectedId(createdItems[0].id);
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to check live signals"),
+  });
+
   return (
-    <div className="mt-6 space-y-5">
-      <Panel
-        title="Live compliance records — wired to Backend-AI-OS"
-        subtitle="/api/es/diligent-search — real Workflow_17 fixture scenarios (the panels above stay mocked)"
-      >
-        <div className="flex flex-wrap gap-2">
-          {COMPLIANCE_FIXTURE_SCENARIOS.map((s) => (
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
+      <PageHeader
+        eyebrow="Workflow 09"
+        title="Carrier Appetite Intelligence Tracking"
+        description="Aggregates signals already logged by Quote Comparison and Renewal Remarketing, and surfaces well-evidenced appetite-shift suggestions for human review."
+        actions={
+          <div className="flex flex-wrap gap-2">
             <Button
-              key={s.ref}
               variant="secondary"
-              disabled={runMutation.isPending}
-              onClick={() => runMutation.mutate(s)}
+              disabled={runLiveMutation.isPending}
+              onClick={() => runLiveMutation.mutate()}
+              title="Evaluates every carrier with a real declination signal already logged by Quote Comparison for this tenant"
             >
-              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+              {runLiveMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Sparkles className="h-4 w-4" />
+                <Radar className="h-4 w-4" />
               )}
-              {s.label}
+              Check live signals
             </Button>
-          ))}
+            <Button variant="primary" onClick={() => setPickerOpen((v) => !v)}>
+              <Sparkles className="h-4 w-4" />
+              New appetite check
+            </Button>
+          </div>
+        }
+      />
+
+      <div className="mb-5 flex items-start gap-3 rounded-xl border border-border bg-secondary/40 p-4 text-sm">
+        <Radar className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+        <div>
+          <div className="font-medium">v1 scope, kept narrow on purpose</div>
+          <div className="text-[11px] text-muted-foreground">
+            This workflow only aggregates, suggests, and auto-updates exactly two metadata fields —
+            appetite confidence and last-signal date. Treat that as binding, not a starting point to
+            expand from. Aggregates signals already logged by Quote Comparison (QC-03) and Renewal
+            Remarketing (RR-08) — it never collects new signals of its own.
+          </div>
         </div>
-      </Panel>
+      </div>
+
+      {pickerOpen && (
+        <Panel title="Run an appetite check" subtitle="Real Workflow_18 fixture scenarios">
+          <div className="flex flex-wrap gap-2">
+            {APPETITE_FIXTURE_SCENARIOS.map((s) => (
+              <Button
+                key={s.ref}
+                variant="secondary"
+                disabled={runMutation.isPending}
+                onClick={() => runMutation.mutate(s)}
+              >
+                {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {s.label}
+              </Button>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <GovKpi
+          label="Evaluations run"
+          value={String(items.length)}
+          sub="From Quote Comparison + Remarketing signals"
+        />
+        <GovKpi
+          label="Suppressed"
+          value={String(suppressedCount)}
+          sub={
+            items.length > 0
+              ? `${Math.round((suppressedCount / items.length) * 100)}% of total — expected`
+              : "Default outcome"
+          }
+        />
+        <GovKpi
+          label="Pending review"
+          value={String(items.filter((i) => i.payload?.status === "PENDING_REVIEW").length)}
+          sub="Awaiting broker approval"
+        />
+        <GovKpi
+          label="Auto-updated"
+          value={String(
+            items.filter((i) => i.payload?.status === "METADATA_AUTO_UPDATED").length,
+          )}
+          sub="Confidence + last-signal date only"
+        />
+      </div>
 
       {listQuery.isLoading && (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading compliance records…
+        <div className="mt-6 flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading evaluations…
         </div>
       )}
       {listQuery.isError && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+        <div className="mt-6 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load records."}
+          {listQuery.error instanceof Error
+            ? listQuery.error.message
+            : "Failed to load evaluations."}
         </div>
       )}
 
       {!listQuery.isLoading && !listQuery.isError && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
-          <Panel title="Compliance records" subtitle={`${items.length} generated`}>
+        <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel
+            title="Appetite evaluations"
+            subtitle={`${items.length} generated`}
+            actions={<FoundationBadge kind="matching" />}
+          >
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No records yet — run a scenario above.
+                No evaluations yet — run a scenario above.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -7128,8 +5021,13 @@ function LiveComplianceSection() {
                       <span className="truncate font-mono text-sm">
                         {row.submission_id ?? row.id}
                       </span>
-                      <div className="mt-1.5">
+                      <div className="mt-1.5 flex items-center gap-1.5">
                         <Chip>{row.status}</Chip>
+                        {row.payload?.pattern_type && (
+                          <Chip tone={APPETITE_PATTERN_TONE[row.payload.pattern_type] ?? "warn"}>
+                            {row.payload.pattern_type.replace(/_/g, " ")}
+                          </Chip>
+                        )}
                       </div>
                     </div>
                   </button>
@@ -7142,13 +5040,13 @@ function LiveComplianceSection() {
             {!selectedId ? (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  Select a record from the list.
+                  Select an evaluation from the list.
                 </div>
               </Panel>
             ) : detailQuery.isLoading ? (
               <Panel>
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading record…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading evaluation…
                 </div>
               </Panel>
             ) : detailQuery.isError ? (
@@ -7157,11 +5055,11 @@ function LiveComplianceSection() {
                   <AlertTriangle className="h-4 w-4" />
                   {detailQuery.error instanceof Error
                     ? detailQuery.error.message
-                    : "Failed to load record."}
+                    : "Failed to load evaluation."}
                 </div>
               </Panel>
             ) : detailQuery.data?.payload ? (
-              <LiveComplianceCard
+              <LiveSignalCard
                 itemId={detailQuery.data.id}
                 payload={detailQuery.data.payload}
                 onActed={appendLog}
@@ -7169,14 +5067,14 @@ function LiveComplianceSection() {
             ) : (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  No record data for this item.
+                  No evaluation data for this item.
                 </div>
               </Panel>
             )}
 
             <Panel
-              title="Activity (live section)"
-              subtitle="This session's real actions"
+              title="Decision timeline"
+              subtitle="Every AI and human decision, fully auditable"
               actions={<FoundationBadge kind="matching" />}
             >
               <ul className="divide-y divide-border">
@@ -7204,199 +5102,6 @@ function LiveComplianceSection() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   9. Carrier Appetite Intelligence Tracking
-   ============================================================ */
-
-const APPETITE_BATCH_RUN = {
-  lastRunAt: "Feb 03, 2026 · 06:00 ET",
-  nextRunAt: "Feb 04, 2026 · 06:00 ET",
-  cadence: "Daily batch",
-};
-
-export function CarrierAppetiteIntelligence() {
-  const navigate = useNavigate();
-  const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
-  const [handedOff, setHandedOff] = useState<Record<string, boolean>>({});
-
-  function dismiss(id: string) {
-    setDismissed((prev) => ({ ...prev, [id]: true }));
-  }
-
-  function approveAndHandOff(id: string) {
-    setHandedOff((prev) => ({ ...prev, [id]: true }));
-    navigate({ to: "/app/workflows/$slug", params: { slug: "submission-matching" } });
-  }
-
-  return (
-    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
-      <PageHeader
-        eyebrow="Workflow 09"
-        title="Carrier Appetite Intelligence Tracking"
-        description="Aggregates signals already logged by Quote Comparison and Renewal Remarketing, and surfaces well-evidenced appetite-shift suggestions for human review."
-        actions={
-          <Button variant="primary">
-            <Download className="h-4 w-4" />
-            Export signal log
-          </Button>
-        }
-      />
-
-      <div className="mb-5 flex items-start gap-3 rounded-xl border border-border bg-secondary/40 p-4 text-sm">
-        <Radar className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-        <div>
-          <div className="font-medium">v1 scope, kept narrow on purpose</div>
-          <div className="text-[11px] text-muted-foreground">
-            This workflow only aggregates, suggests, and auto-updates exactly two metadata fields —
-            carrier fit score and last-signal date. Treat that as binding, not a starting point to
-            expand from.
-          </div>
-          <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Clock className="h-3 w-3 shrink-0" />
-            {APPETITE_BATCH_RUN.cadence} — not real-time. Aggregates QC-03 and RR-08 signals logged
-            since the last run. Last run {APPETITE_BATCH_RUN.lastRunAt} · next run{" "}
-            {APPETITE_BATCH_RUN.nextRunAt}.
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <GovKpi label="Signals this month" value="24" sub="From Quote Comparison + Remarketing" />
-        <GovKpi label="Pending review" value="2" sub="Awaiting broker approval" />
-        <GovKpi label="Class-level signals" value="16" sub="66% of total" />
-        <GovKpi label="Auto-updates applied" value="8" sub="Fit score + last-signal date only" />
-      </div>
-
-      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <Panel title="Appetite signal review queue" actions={<FoundationBadge kind="matching" />}>
-          <ul className="divide-y divide-border">
-            {appetiteSignals.map((s) => {
-              const status = dismissed[s.id] ? "Dismissed" : s.status;
-              return (
-                <li key={s.id} className="py-3 text-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{s.carrier}</span>
-                        <Chip tone={s.scope === "Class-level" ? "accent" : "neutral"}>
-                          {s.scope}
-                        </Chip>
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">{s.classOrAccount}</div>
-                      <div className="mt-1 flex items-center gap-1.5">
-                        {s.signal.includes("expanding") ? (
-                          <TrendingUp className="h-3.5 w-3.5 text-success" />
-                        ) : s.signal.includes("tightening") ? (
-                          <TrendingDown className="h-3.5 w-3.5 text-destructive" />
-                        ) : (
-                          <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                        )}
-                        <span>{s.signal}</span>
-                      </div>
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        Evidence: {s.evidence}
-                      </div>
-                      <div className="mt-1 text-[11px]">
-                        <b>Suggested:</b> {s.suggestedAction}
-                      </div>
-                      {handedOff[s.id] && !dismissed[s.id] && (
-                        <div className="mt-1 flex items-center gap-1.5 text-[11px] text-accent">
-                          <ArrowRight className="h-3 w-3 shrink-0" />
-                          Routed to Submission Market Matching (Match Rules) — apply the change
-                          there. This page never edits the profile directly.
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-2">
-                      <Chip
-                        tone={
-                          status === "Approved"
-                            ? "success"
-                            : status === "Dismissed"
-                              ? "danger"
-                              : "warn"
-                        }
-                      >
-                        {status}
-                      </Chip>
-                      {status === "Pending review" && (
-                        <div className="flex gap-1">
-                          <Button
-                            variant="secondary"
-                            className="!py-1 !text-xs"
-                            onClick={() => dismiss(s.id)}
-                          >
-                            Dismiss
-                          </Button>
-                          <Button
-                            variant="primary"
-                            className="!py-1 !text-xs"
-                            onClick={() => approveAndHandOff(s.id)}
-                            title="Routes to the Carrier Appetite Profile interface in Submission Market Matching — no edit happens here"
-                          >
-                            Approve → apply in profile
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </Panel>
-        <Panel
-          title="Suppressed from auto-signal"
-          subtitle="Low submission volume — human review required"
-        >
-          <ul className="divide-y divide-border text-sm">
-            <li className="flex items-center justify-between py-3">
-              <span>Ategrity Specialty · Marine terminal ops</span>
-              <Chip>3 subs / 90d</Chip>
-            </li>
-            <li className="flex items-center justify-between py-3">
-              <span>Palomar Specialty · Environmental</span>
-              <Chip>1 sub / 90d</Chip>
-            </li>
-          </ul>
-          <div className="mt-3 text-[11px] text-muted-foreground">
-            Volume below the confidence threshold — signals here are logged but never
-            auto-suggested.
-          </div>
-        </Panel>
-      </div>
-
-      <div className="mt-6">
-        <Panel
-          title="Decision timeline"
-          subtitle="Every AI and human decision, fully auditable"
-          actions={<FoundationBadge kind="matching" />}
-        >
-          <ul className="divide-y divide-border">
-            {decisionsLog.map((d, i) => (
-              <li key={i} className="flex items-start gap-3 py-3 text-sm">
-                <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{d.at}</span>
-                <div className="flex-1">
-                  <div>
-                    <b>{d.who}</b> — {d.what}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
-                </div>
-                {d.conf !== "—" && <Chip>{d.conf}</Chip>}
-                <button className="text-[11px] text-muted-foreground hover:text-foreground">
-                  View trail →
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      </div>
-
-      <LiveSignalsSection />
     </div>
   );
 }
@@ -7540,95 +5245,165 @@ function LiveSignalCard({
   );
 }
 
-function LiveSignalsSection() {
+/* ============================================================
+   10. Pipeline & Carrier Performance Reporting
+   ============================================================ */
+
+export function PipelineCarrierReporting() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [log, setLog] = useState<LogEntry[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const listQuery = useQuery({
-    queryKey: ["carrier-appetite-intelligence", "list"],
-    queryFn: listCarrierAppetiteIntelligence,
+    queryKey: ["pipeline-reporting", "list"],
+    queryFn: listPipelineReporting,
   });
   const items = listQuery.data ?? [];
-  const suppressedCount = items.filter((i) => i.payload?.status === "SUPPRESSED").length;
+  const gapCount = items.filter((i) => i.payload?.data_completeness.status === "PARTIAL").length;
+  const lowVolumeCarrierCount = items.reduce(
+    (sum, i) => sum + (i.payload?.carrier_performance.filter((c) => c.low_volume_flag).length ?? 0),
+    0,
+  );
 
   const detailQuery = useQuery({
-    queryKey: ["carrier-appetite-intelligence", "detail", selectedId],
-    queryFn: () => getCarrierAppetiteIntelligence(selectedId!),
+    queryKey: ["pipeline-reporting", "detail", selectedId],
+    queryFn: () => getPipelineReporting(selectedId!),
     enabled: Boolean(selectedId),
   });
 
-  function appendLog(who: string, what: string, ctx: string) {
-    setLog((prev) => [
-      {
-        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        who,
-        what,
-        ctx,
-        conf: "—",
-      },
-      ...prev,
-    ]);
-  }
-
   const runMutation = useMutation({
-    mutationFn: (s: AppetiteFixtureScenario) => runCarrierAppetiteIntelligence(s.ref),
+    mutationFn: (s: ReportingFixtureScenario) => runPipelineReporting(s.ref),
     onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["carrier-appetite-intelligence"] });
-      toast.success(`${s.label}: evaluation complete`);
+      queryClient.invalidateQueries({ queryKey: ["pipeline-reporting"] });
+      toast.success(`${s.label}: report generated`);
       setSelectedId(item.id);
+      setPickerOpen(false);
     },
     onError: (err: unknown, s) =>
       toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
   });
 
+  const runLiveMutation = useMutation({
+    mutationFn: runPipelineReportingLive,
+    onSuccess: (item) => {
+      queryClient.invalidateQueries({ queryKey: ["pipeline-reporting"] });
+      toast.success("Live report generated from real cross-workflow data");
+      setSelectedId(item.id);
+      setPickerOpen(false);
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to generate live report"),
+  });
+
   return (
-    <div className="mt-6 space-y-5">
-      <Panel
-        title="Live evaluations — wired to Backend-AI-OS"
-        subtitle={`/api/es/carrier-appetite-intelligence — real Workflow_18 fixture scenarios (the panels above stay mocked)${
-          items.length > 0 ? ` · ${suppressedCount} of ${items.length} suppressed so far` : ""
-        }`}
-      >
-        <div className="flex flex-wrap gap-2">
-          {APPETITE_FIXTURE_SCENARIOS.map((s) => (
+    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
+      <PageHeader
+        eyebrow="Workflow 10"
+        title="Pipeline & Carrier Performance Reporting"
+        description="Aggregates logs from all prior E&S workflows into a funnel view, carrier hit-rate comparison, and remarketing value report — with mandatory low-volume annotation and data-gap flagging."
+        actions={
+          <div className="flex flex-wrap gap-2">
             <Button
-              key={s.ref}
               variant="secondary"
-              disabled={runMutation.isPending}
-              onClick={() => runMutation.mutate(s)}
+              disabled={runLiveMutation.isPending}
+              onClick={() => runLiveMutation.mutate()}
+              title="Builds one report from real Market Matching / Package Assembly / Quote Comparison / Binder Issuance / Renewal Remarketing data for this tenant"
             >
-              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+              {runLiveMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Sparkles className="h-4 w-4" />
+                <Clock className="h-4 w-4" />
               )}
-              {s.label}
+              Generate live report
             </Button>
-          ))}
+            <Button variant="primary" onClick={() => setPickerOpen((v) => !v)}>
+              <Sparkles className="h-4 w-4" />
+              New report
+            </Button>
+          </div>
+        }
+      />
+
+      <div className="mb-5 flex items-start gap-3 rounded-xl border border-border bg-secondary/40 p-4 text-sm">
+        <Clock className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+        <div>
+          <div className="font-medium">Pure aggregation, no forecasting (v1 scope)</div>
+          <div className="text-[11px] text-muted-foreground">
+            Pulls logs already produced by the prior E&S workflows for the selected period. No
+            predictive forecasting, automated threshold alerting, or individual broker
+            scorecarding. Revenue attribution (PR-04) is intentionally not built — it needs real
+            commission-structure data from discovery, not an assumption.
+          </div>
         </div>
-      </Panel>
+      </div>
+
+      {pickerOpen && (
+        <Panel title="Generate a report" subtitle="Real Workflow_19 fixture scenarios">
+          <div className="flex flex-wrap gap-2">
+            {REPORTING_FIXTURE_SCENARIOS.map((s) => (
+              <Button
+                key={s.ref}
+                variant="secondary"
+                disabled={runMutation.isPending}
+                onClick={() => runMutation.mutate(s)}
+              >
+                {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {s.label}
+              </Button>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <GovKpi
+          label="Reports generated"
+          value={String(items.length)}
+          sub="Across all fixture scenarios"
+        />
+        <GovKpi
+          label="Reports with a data gap"
+          value={String(gapCount)}
+          sub="PR-06 — flagged, never smoothed over"
+        />
+        <GovKpi
+          label="Low-volume carrier flags"
+          value={String(lowVolumeCarrierCount)}
+          sub="PR-02 — annotated, never ranked at face value"
+        />
+        <GovKpi
+          label="Revenue attribution (PR-04)"
+          value="Not built"
+          sub="Needs real commission data — by design"
+        />
+      </div>
 
       {listQuery.isLoading && (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading evaluations…
+        <div className="mt-6 flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading reports…
         </div>
       )}
       {listQuery.isError && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+        <div className="mt-6 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          {listQuery.error instanceof Error
-            ? listQuery.error.message
-            : "Failed to load evaluations."}
+          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load reports."}
         </div>
       )}
 
       {!listQuery.isLoading && !listQuery.isError && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
-          <Panel title="Evaluations" subtitle={`${items.length} generated`}>
+        <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
+          <Panel
+            title="Reports"
+            subtitle={`${items.length} generated`}
+            actions={<FoundationBadge kind="matching" />}
+          >
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No evaluations yet — run a scenario above.
+                No reports yet — run a scenario above.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -7644,13 +5419,8 @@ function LiveSignalsSection() {
                       <span className="truncate font-mono text-sm">
                         {row.submission_id ?? row.id}
                       </span>
-                      <div className="mt-1.5 flex items-center gap-1.5">
+                      <div className="mt-1.5">
                         <Chip>{row.status}</Chip>
-                        {row.payload?.pattern_type && (
-                          <Chip tone={APPETITE_PATTERN_TONE[row.payload.pattern_type] ?? "warn"}>
-                            {row.payload.pattern_type.replace(/_/g, " ")}
-                          </Chip>
-                        )}
                       </div>
                     </div>
                   </button>
@@ -7659,17 +5429,17 @@ function LiveSignalsSection() {
             )}
           </Panel>
 
-          <div className="space-y-5">
+          <div>
             {!selectedId ? (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  Select an evaluation from the list.
+                  Select a report from the list.
                 </div>
               </Panel>
             ) : detailQuery.isLoading ? (
               <Panel>
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading evaluation…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading report…
                 </div>
               </Panel>
             ) : detailQuery.isError ? (
@@ -7678,343 +5448,21 @@ function LiveSignalsSection() {
                   <AlertTriangle className="h-4 w-4" />
                   {detailQuery.error instanceof Error
                     ? detailQuery.error.message
-                    : "Failed to load evaluation."}
+                    : "Failed to load report."}
                 </div>
               </Panel>
             ) : detailQuery.data?.payload ? (
-              <LiveSignalCard
-                itemId={detailQuery.data.id}
-                payload={detailQuery.data.payload}
-                onActed={appendLog}
-              />
+              <LiveReportCard payload={detailQuery.data.payload} />
             ) : (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  No evaluation data for this item.
+                  No report data for this item.
                 </div>
               </Panel>
             )}
-
-            <Panel
-              title="Activity (live section)"
-              subtitle="This session's real actions"
-              actions={<FoundationBadge kind="matching" />}
-            >
-              <ul className="divide-y divide-border">
-                {log.length === 0 ? (
-                  <li className="py-6 text-center text-sm text-muted-foreground">
-                    No activity yet this session.
-                  </li>
-                ) : (
-                  log.slice(0, 10).map((d, i) => (
-                    <li key={i} className="flex items-start gap-3 py-3 text-sm">
-                      <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                        {d.at}
-                      </span>
-                      <div className="flex-1">
-                        <div>
-                          <b>{d.who}</b> — {d.what}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">{d.ctx}</div>
-                      </div>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </Panel>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   10. Pipeline & Carrier Performance Reporting
-   ============================================================ */
-
-const funnel = [
-  { stage: "Submissions", count: 274 },
-  { stage: "Matched ≥1 market", count: 241 },
-  { stage: "Packaged", count: 198 },
-  { stage: "Quoted", count: 156 },
-  { stage: "Bound", count: 104 },
-];
-
-const REPORT_PERIODS = ["Trailing 30 days", "Trailing 90 days", "Trailing 12 months", "YTD"];
-const REPORT_GENERATED_AT = "Feb 03, 2026 · 14:22 ET";
-
-function overallCompleteness(rows: typeof pipelineCompleteness) {
-  return Math.round(rows.reduce((sum, r) => sum + r.completePct, 0) / rows.length);
-}
-
-export function PipelineCarrierReporting() {
-  const max = funnel[0].count;
-  const [scope, setScope] = useState<{ mode: "Scheduled" | "On-demand"; period: string }>({
-    mode: "On-demand",
-    period: "Trailing 30 days",
-  });
-
-  const overall = overallCompleteness(pipelineCompleteness);
-  const worst = [...pipelineCompleteness]
-    .filter((w) => w.gap)
-    .sort((a, b) => a.completePct - b.completePct)[0];
-  const binderGap = pipelineCompleteness.find((w) => w.workflow === "Binder & Policy Issuance");
-  const remarketGap = pipelineCompleteness.find((w) => w.workflow === "Renewal Remarketing");
-
-  return (
-    <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
-      <PageHeader
-        eyebrow="Workflow 10"
-        title="Pipeline & Carrier Performance Reporting"
-        description="Aggregates logs from all six prior workflows into a funnel view, carrier hit-rate comparison, and remarketing value report — scheduled or on-demand, for a selected reporting period."
-        actions={
-          <Button variant="secondary">
-            <Download className="h-4 w-4" />
-            Export book pack
-          </Button>
-        }
-      />
-
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 p-4 text-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <Tabs
-            tabs={["Scheduled", "On-demand"]}
-            value={scope.mode}
-            onChange={(v) => setScope((p) => ({ ...p, mode: v as "Scheduled" | "On-demand" }))}
-          />
-          <Tabs
-            tabs={REPORT_PERIODS}
-            value={scope.period}
-            onChange={(v) => setScope((p) => ({ ...p, period: v }))}
-          />
-        </div>
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <Clock className="h-3 w-3 shrink-0" />
-          Pulls logs from all six prior workflows for the selected period.{" "}
-          {scope.mode === "Scheduled"
-            ? "Scheduled — next run Mon 06:00 ET."
-            : `On-demand — generated now, ${REPORT_GENERATED_AT}.`}
-        </div>
-      </div>
-
-      <div className="mb-5">
-        <Panel
-          title="Data completeness (PR-06)"
-          subtitle="Checked before any calculation below runs — not a footnote"
-          actions={<FoundationBadge kind="matching" />}
-        >
-          <div
-            className={`mb-3 flex items-start gap-2 rounded-lg border-2 p-3 text-sm ${overall === 100 ? "border-success/40 bg-success/5" : "border-warn/40 bg-warn/5"}`}
-          >
-            {overall === 100 ? (
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-            ) : (
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-            )}
-            <div>
-              <b>Overall: {overall}% complete.</b>{" "}
-              {worst
-                ? `${worst.workflow} has the largest gap — ${worst.gap}.`
-                : "All six source workflows are fully complete for this period."}
-            </div>
-          </div>
-          <ul className="divide-y divide-border">
-            {pipelineCompleteness.map((w) => (
-              <li key={w.workflow} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <div className="flex-1">
-                  <div className="font-medium">{w.workflow}</div>
-                  {w.gap && <div className="text-[11px] text-warn">{w.gap}</div>}
-                </div>
-                <Chip tone={w.completePct === 100 ? "success" : "warn"}>{w.completePct}%</Chip>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <GovKpi
-          label="Bound premium YTD"
-          value="$48.2M"
-          sub={binderGap?.gap ? `+14% YoY · Binder: ${binderGap.gap}` : "+14% YoY"}
-        />
-        <GovKpi label="Hit ratio" value="38.4%" sub="+1.7pp" />
-        <div className="rounded-xl border border-border bg-background p-4">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Avg placement cycle (PR-03)
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-serif text-3xl leading-none">
-              {placementCycle.delayExcluded}d
-            </span>
-            <span className="text-[11px] text-muted-foreground">delay-excluded</span>
-          </div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            Raw {placementCycle.raw}d · excludes {placementCycle.avgBrokerAgentDelay}d avg
-            broker/agent delay · target {placementCycle.target}
-          </div>
-        </div>
-        <GovKpi
-          label="Renewal retention"
-          value="92%"
-          sub={remarketGap?.gap ? `+3pp · Remarketing: ${remarketGap.gap}` : "+3pp"}
-        />
-        <GovKpi label="Policies in force" value="2,148" sub="+118 net" />
-      </div>
-
-      <div className="mt-6 grid gap-5 lg:grid-cols-3">
-        <Panel
-          className="lg:col-span-2"
-          title="Submission → bound funnel"
-          subtitle={`${scope.period} · 104 of 274 submissions bound (38.0%)`}
-        >
-          <div className="space-y-3 pt-2">
-            {funnel.map((f) => (
-              <div key={f.stage} className="flex items-center gap-3 text-sm">
-                <div className="w-40 shrink-0 text-xs text-muted-foreground">{f.stage}</div>
-                <div className="h-6 flex-1 overflow-hidden rounded-md bg-secondary">
-                  <div
-                    className="flex h-full items-center justify-end bg-accent px-2 text-[10px] font-mono text-accent-foreground transition-[width] duration-700 ease-out"
-                    style={{ width: `${(f.count / max) * 100}%` }}
-                  >
-                    {f.count}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 text-[10px] text-muted-foreground">
-            Low-volume annotation: state- and class-level cuts below 10 submissions/mo are flagged,
-            not silently averaged in.
-          </div>
-        </Panel>
-        <Panel title="Premium by state · $M">
-          <div className="space-y-2">
-            {stateMix.map((s) => {
-              const max2 = Math.max(...stateMix.map((x) => x.premium));
-              return (
-                <div key={s.state} className="flex items-center gap-3 text-xs">
-                  <div className="w-8">{s.state}</div>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
-                    <div
-                      className="h-full bg-foreground transition-[width] duration-700 ease-out"
-                      style={{ width: `${(s.premium / max2) * 100}%` }}
-                    />
-                  </div>
-                  <div className="w-12 text-right font-mono">${s.premium.toFixed(1)}M</div>
-                </div>
-              );
-            })}
-          </div>
-        </Panel>
-      </div>
-
-      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <Panel title="Carrier hit-rate comparison">
-          <table className="w-full text-sm">
-            <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              <tr>
-                <th className="py-2 text-left">Carrier</th>
-                <th className="py-2 text-right">Submissions</th>
-                <th className="py-2 text-right">Quoted</th>
-                <th className="py-2 text-right">Bound</th>
-                <th className="py-2 text-right">Hit ratio</th>
-                <th className="py-2 text-right">Avg turnaround</th>
-                <th className="py-2 text-right">Premium</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {carrierPerformance.map((c) => (
-                <tr key={c.carrier} className="transition-colors hover:bg-secondary/40">
-                  <td className="py-2.5 font-medium">{c.carrier}</td>
-                  <td className="py-2.5 text-right tabular-nums">{c.submissions}</td>
-                  <td className="py-2.5 text-right tabular-nums">{c.quoted}</td>
-                  <td className="py-2.5 text-right tabular-nums">{c.bound}</td>
-                  <td className="py-2.5 text-right font-mono">{c.hitRate}</td>
-                  <td className="py-2.5 text-right font-mono">{c.avgTurnaround}</td>
-                  <td className="py-2.5 text-right font-mono">{c.premium}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Panel>
-        <Panel title="Remarketing value report" actions={<FoundationBadge kind="matching" />}>
-          <div className="space-y-3 text-sm">
-            <div className="rounded-lg border border-border p-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                Accounts remarketed, {scope.period}
-              </div>
-              <div className="mt-1 font-serif text-2xl">18</div>
-            </div>
-            <div className="rounded-lg border border-border p-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                Premium improvement captured
-              </div>
-              <div className="mt-1 font-serif text-2xl">$212k</div>
-              <div className="text-[11px] text-muted-foreground">
-                vs. incumbent's initial renewal indication
-              </div>
-            </div>
-            <div className="rounded-lg border border-border p-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                Retention on remarketed accounts
-              </div>
-              <div className="mt-1 font-serif text-2xl">78%</div>
-              <div className="text-[11px] text-muted-foreground">
-                Moved to a new market but stayed on the book
-              </div>
-            </div>
-          </div>
-        </Panel>
-      </div>
-
-      <div className="mt-6">
-        <Panel title="Top retail agencies">
-          <table className="w-full text-sm">
-            <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              <tr>
-                <th className="py-2 text-left">Agency</th>
-                <th className="py-2 text-right">Submissions</th>
-                <th className="py-2 text-right">Packaged</th>
-                <th className="py-2 text-right">Bound</th>
-                <th className="py-2 text-right">Hit ratio</th>
-                <th className="py-2 text-right">Avg response time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {retailAgents.map((a) => (
-                <tr key={a.agency} className="transition-colors hover:bg-secondary/40">
-                  <td className="py-2.5 font-medium">{a.agency}</td>
-                  <td className="py-2.5 text-right tabular-nums">{a.submissions}</td>
-                  <td className="py-2.5 text-right tabular-nums">{a.packaged}</td>
-                  <td className="py-2.5 text-right tabular-nums">{a.bound}</td>
-                  <td className="py-2.5 text-right font-mono">{a.hitRate}</td>
-                  <td className="py-2.5 text-right font-mono">{a.avgResponseTime}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Panel>
-      </div>
-
-      <div className="mt-6">
-        <Panel title="Executive AI insight" actions={<FoundationBadge kind="matching" />}>
-          <p className="text-sm">
-            Placement cycle is averaging 6.4 days against a 2–3 day target — Ategrity Specialty's
-            9.4-day turnaround is the single largest drag on the panel average. Kinsale Insurance is
-            the strongest overall channel (42% hit ratio, 4.1-day turnaround) — recommend routing
-            more marginal-fit cold-storage and habitational risk to them first. Watch item: CO
-            contractor excess hit ratio has fallen 6pp since the last appetite signal from Markel.
-          </p>
-          <div className="mt-3 flex gap-2">
-            <Button variant="secondary">Generate board pack</Button>
-            <Button variant="ghost">Share with team</Button>
-          </div>
-        </Panel>
-      </div>
-
-      <LiveReportsSection />
     </div>
   );
 }
@@ -8166,135 +5614,3 @@ function LiveReportCard({ payload }: { payload: PipelineReportPayload }) {
   );
 }
 
-function LiveReportsSection() {
-  const queryClient = useQueryClient();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  const listQuery = useQuery({
-    queryKey: ["pipeline-reporting", "list"],
-    queryFn: listPipelineReporting,
-  });
-  const items = listQuery.data ?? [];
-
-  const detailQuery = useQuery({
-    queryKey: ["pipeline-reporting", "detail", selectedId],
-    queryFn: () => getPipelineReporting(selectedId!),
-    enabled: Boolean(selectedId),
-  });
-
-  const runMutation = useMutation({
-    mutationFn: (s: ReportingFixtureScenario) => runPipelineReporting(s.ref),
-    onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["pipeline-reporting"] });
-      toast.success(`${s.label}: report generated`);
-      setSelectedId(item.id);
-    },
-    onError: (err: unknown, s) =>
-      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
-  });
-
-  return (
-    <div className="mt-6 space-y-5">
-      <Panel
-        title="Live reports — wired to Backend-AI-OS"
-        subtitle="/api/es/pipeline-reporting — real Workflow_19 fixture scenarios (the panels above stay mocked). No approve/escalate here — a report isn't a determination a human approves or declines."
-      >
-        <div className="flex flex-wrap gap-2">
-          {REPORTING_FIXTURE_SCENARIOS.map((s) => (
-            <Button
-              key={s.ref}
-              variant="secondary"
-              disabled={runMutation.isPending}
-              onClick={() => runMutation.mutate(s)}
-            >
-              {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {s.label}
-            </Button>
-          ))}
-        </div>
-      </Panel>
-
-      {listQuery.isLoading && (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading reports…
-        </div>
-      )}
-      {listQuery.isError && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4" />
-          {listQuery.error instanceof Error ? listQuery.error.message : "Failed to load reports."}
-        </div>
-      )}
-
-      {!listQuery.isLoading && !listQuery.isError && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
-          <Panel title="Reports" subtitle={`${items.length} generated`}>
-            {items.length === 0 ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">
-                No reports yet — run a scenario above.
-              </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {items.map((row) => (
-                  <button
-                    key={row.id}
-                    onClick={() => setSelectedId(row.id)}
-                    className={`flex w-full items-start gap-3 py-3 text-left transition hover:bg-secondary/40 ${
-                      selectedId === row.id ? "bg-secondary/50" : ""
-                    }`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <span className="truncate font-mono text-sm">
-                        {row.submission_id ?? row.id}
-                      </span>
-                      <div className="mt-1.5">
-                        <Chip>{row.status}</Chip>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </Panel>
-
-          <div>
-            {!selectedId ? (
-              <Panel>
-                <div className="py-10 text-center text-sm text-muted-foreground">
-                  Select a report from the list.
-                </div>
-              </Panel>
-            ) : detailQuery.isLoading ? (
-              <Panel>
-                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading report…
-                </div>
-              </Panel>
-            ) : detailQuery.isError ? (
-              <Panel>
-                <div className="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  {detailQuery.error instanceof Error
-                    ? detailQuery.error.message
-                    : "Failed to load report."}
-                </div>
-              </Panel>
-            ) : detailQuery.data?.payload ? (
-              <LiveReportCard payload={detailQuery.data.payload} />
-            ) : (
-              <Panel>
-                <div className="py-10 text-center text-sm text-muted-foreground">
-                  No report data for this item.
-                </div>
-              </Panel>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}

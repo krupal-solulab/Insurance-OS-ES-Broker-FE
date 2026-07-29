@@ -33,6 +33,14 @@ export function runPipelineReporting(scenarioRef: string) {
   return api.post<ReviewItemOut>(`${BASE}/run`, { scenario_ref: scenarioRef });
 }
 
+/** Additive alongside the fixture-scenario run above: builds one report
+ * from real cross-workflow data already logged for this tenant (Market
+ * Matching, Package Assembly, Quote Comparison, Binder Issuance, Renewal
+ * Remarketing) — genuine aggregation, not another fixture scenario. */
+export function runPipelineReportingLive() {
+  return api.post<ReviewItemOut>(`${BASE}/run-live`);
+}
+
 export interface FixtureScenario {
   ref: string;
   label: string;

@@ -2225,6 +2225,8 @@ export interface components {
             days_remaining: number;
             /** Term Total Days */
             term_total_days: number;
+            /** Unusual Timing Flag */
+            unusual_timing_flag?: string | null;
         };
         /** ReasoningCitationOut */
         ReasoningCitationOut: {

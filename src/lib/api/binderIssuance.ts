@@ -35,6 +35,16 @@ export function runBinderIssuance(scenarioRef: string) {
   return api.post<ReviewItemOut>(`${BASE}/run`, { scenario_ref: scenarioRef });
 }
 
+/** Additive alongside the fixture-scenario run above: starts a real
+ * pre-bind pass from an actual, already-selected Quote Comparison item's
+ * real terms — genuine Quote Comparison -> Binder Issuance hand-off, not
+ * another fixture scenario. */
+export function runBinderIssuanceFromQuote(quoteComparisonItemId: string) {
+  return api.post<ReviewItemOut>(`${BASE}/run-from-quote-comparison`, {
+    quote_comparison_item_id: quoteComparisonItemId,
+  });
+}
+
 /** Required before Placement Confirmation can fire (BI-06's gate). */
 export function resolveConfirmationDiscrepancy(itemId: string, resolution: DiscrepancyResolution) {
   return api.post<ReviewItemOut>(`${BASE}/${itemId}/resolve-confirmation-discrepancy`, {

@@ -34,6 +34,14 @@ export function runCarrierAppetiteIntelligence(scenarioRef: string) {
   return api.post<ReviewItemOut>(`${BASE}/run`, { scenario_ref: scenarioRef });
 }
 
+/** Additive alongside the fixture-scenario run above: evaluates every
+ * carrier with a real, classifiable declination signal already logged by
+ * Quote Comparison for this tenant — genuine cross-workflow aggregation,
+ * not another fixture scenario. */
+export function runCarrierAppetiteIntelligenceLive() {
+  return api.post<ReviewItemOut[]>(`${BASE}/run-live`);
+}
+
 /** Approving a GENUINE_INCONSISTENCY suggestion — records approval only,
  * never changes any profile data (none exists to change). */
 export function approveCarrierAppetiteIntelligence(itemId: string) {
