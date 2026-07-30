@@ -13,7 +13,7 @@ import {
   Mail,
 } from "lucide-react";
 import { PageHeader } from "./AppShell";
-import { Panel, Chip, Tabs } from "./Workflows";
+import { Panel, Chip, Tabs, Button } from "./Workflows";
 import {
   carrierPerformance,
   retailAgents,
@@ -22,6 +22,16 @@ import {
   placementCycle,
 } from "./mocks";
 import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import Nango from "@nangohq/frontend";
+import {
+  GOOGLE_MAIL_PROVIDER,
+  confirmConnection,
+  createConnectSession,
+  disconnectIntegration,
+  listIntegrations,
+} from "@/lib/api/integrations";
 
 const extractionCaps = [
   {
@@ -762,6 +772,7 @@ export function SettingsPage() {
             <Field label="Carrier panel" value="42 markets across E&S / specialty lines" />
           </div>
         </Panel>
+        <IntegrationsPanel />
         <Panel title="Team">
           <ul className="divide-y divide-border text-sm">
             {[
@@ -809,6 +820,108 @@ export function SettingsPage() {
         </Panel>
       </div>
     </div>
+  );
+}
+
+/** Real "Connect Gmail" flow — POST /api/core/integrations/connect-session mints a
+ * Nango Connect UI session token, the popup handles Google OAuth, and on success
+ * we save the resulting connectionId via POST /api/core/integrations/connections.
+ * See docs/CONNECTORS_NANGO.md in the backend repo. */
+function IntegrationsPanel() {
+  const queryClient = useQueryClient();
+  const integrationsQuery = useQuery({
+    queryKey: ["integrations"],
+    queryFn: listIntegrations,
+  });
+  const gmailStatus =
+    integrationsQuery.data?.find((i) => i.provider === GOOGLE_MAIL_PROVIDER)?.status ??
+    "disconnected";
+  const connected = gmailStatus === "connected";
+
+  const connectMutation = useMutation({
+    mutationFn: async () => {
+      const session = await createConnectSession();
+      await new Promise<void>((resolve, reject) => {
+        const nango = new Nango({});
+        const connectUI = nango.openConnectUI({
+          sessionToken: session.session_token,
+          onEvent: (event) => {
+            if (event.type === "connect") {
+              confirmConnection(event.payload.providerConfigKey, event.payload.connectionId)
+                .then(() => resolve())
+                .catch((err: unknown) =>
+                  reject(err instanceof Error ? err : new Error("Failed to save connection")),
+                );
+            } else if (event.type === "close") {
+              resolve();
+            } else if (event.type === "error") {
+              reject(new Error(event.payload.errorMessage));
+            }
+          },
+        });
+        connectUI.open();
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["integrations"] });
+      toast.success("Gmail connected");
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to connect Gmail"),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => disconnectIntegration(GOOGLE_MAIL_PROVIDER),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["integrations"] });
+      toast.success("Gmail disconnected");
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to disconnect Gmail"),
+  });
+
+  return (
+    <Panel title="Integrations">
+      <div className="flex items-center justify-between rounded-lg border border-border p-3 text-sm">
+        <div className="flex items-center gap-3">
+          <Mail className="h-4 w-4 text-muted-foreground" />
+          <div>
+            <div className="font-medium">Gmail</div>
+            <div className="text-[11px] text-muted-foreground">
+              Real inbox access for Submission Market Matching
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[10px] ${
+              connected
+                ? "border-emerald-600/30 bg-emerald-600/10 text-emerald-700"
+                : "border-border bg-secondary text-muted-foreground"
+            }`}
+          >
+            {connected ? "Connected" : "Not connected"}
+          </span>
+          {connected ? (
+            <Button
+              variant="secondary"
+              disabled={disconnectMutation.isPending}
+              onClick={() => disconnectMutation.mutate()}
+            >
+              Disconnect
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              disabled={connectMutation.isPending}
+              onClick={() => connectMutation.mutate()}
+            >
+              Connect Gmail
+            </Button>
+          )}
+        </div>
+      </div>
+    </Panel>
   );
 }
 

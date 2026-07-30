@@ -51,3 +51,16 @@ export function runMarketMatching(submissionRef: string) {
 export function actOnMarketMatching(itemId: string, action: ReviewActionVerb) {
   return api.post<ReviewItemOut>(`${BASE}/${itemId}/${action}`);
 }
+
+export interface LiveInboxMessage {
+  id: string;
+  subject: string;
+}
+
+/** Real Gmail messages via the tenant's connected Nango integration (Settings ->
+ * Integrations) — requires CONNECTORS_MODE=live on the backend. Picking one and
+ * calling `runMarketMatching(message.id)` runs the real pipeline against a real
+ * email instead of a Workflow_10 fixture. */
+export function listLiveInbox() {
+  return api.get<LiveInboxMessage[]>(`${BASE}/live-inbox`);
+}

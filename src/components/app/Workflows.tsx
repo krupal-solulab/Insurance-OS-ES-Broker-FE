@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
-  FIXTURE_SUBMISSION_REFS,
   actOnMarketMatching,
   getMarketMatching,
   listDocuments,
+  listLiveInbox,
   listMarketMatching,
   runMarketMatching,
   type CarrierMatchOut,
@@ -16,11 +16,9 @@ import {
   type ReviewActionVerb,
 } from "@/lib/api/marketMatching";
 import {
-  FIXTURE_SCENARIO_REFS,
   actOnPackageAssembly,
   getPackageAssembly,
   listPackageAssembly,
-  runPackageAssembly,
   runPackageAssemblyFromMarketMatching,
   type PackageActionVerb,
   type PackageAssemblyPayload,
@@ -131,7 +129,6 @@ import {
   Sparkles,
   Filter,
   Search,
-  Upload,
   Paperclip,
   Send,
   Building2,
@@ -151,6 +148,7 @@ import {
   Loader2,
   Clock,
   Package,
+  Mail,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { simulateRequest } from "@/lib/simulate";
@@ -215,7 +213,7 @@ export function Chip({
   );
 }
 
-function Button({ children, variant = "secondary", className = "", ...p }: any) {
+export function Button({ children, variant = "secondary", className = "", ...p }: any) {
   const base =
     "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-[color,background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100";
   const styles: Record<string, string> = {
@@ -482,9 +480,13 @@ export function SubmissionMarketMatching() {
     queryKey: ["market-matching", "list"],
     queryFn: listMarketMatching,
   });
-  const items = listQuery.data ?? [];
+  // Live is the only ingestion path now — hides any earlier submission_01..06
+  // fixture runs still sitting in the database rather than deleting them.
+  const items = (listQuery.data ?? []).filter(
+    (i) => !/^submission_\d+$/.test(i.submission_id ?? ""),
+  );
   const selectedRow = items.find((i) => i.id === selectedId) ?? items[0];
-  const firstItemId = listQuery.data?.[0]?.id;
+  const firstItemId = items[0]?.id;
 
   useEffect(() => {
     if (!selectedId && firstItemId) setSelectedId(firstItemId);
@@ -516,25 +518,23 @@ export function SubmissionMarketMatching() {
     );
   }
 
-  const unrunRefs = FIXTURE_SUBMISSION_REFS.filter(
-    (ref) => !items.some((i) => i.submission_id === ref),
-  );
-
-  const runBatchMutation = useMutation({
-    mutationFn: async () => {
-      for (const ref of unrunRefs) await runMarketMatching(ref);
-    },
-    onSuccess: () => {
+  const [liveInboxOpen, setLiveInboxOpen] = useState(false);
+  const liveInboxQuery = useQuery({
+    queryKey: ["market-matching", "live-inbox"],
+    queryFn: listLiveInbox,
+    enabled: liveInboxOpen,
+  });
+  const runLiveInboxMutation = useMutation({
+    mutationFn: (messageId: string) => runMarketMatching(messageId),
+    onSuccess: (item) => {
       queryClient.invalidateQueries({ queryKey: ["market-matching", "list"] });
-      toast.success(
-        unrunRefs.length
-          ? `Ran matching for ${unrunRefs.length} fixture submission(s)`
-          : "All fixture submissions already run",
-      );
+      toast.success("Matching run against a real Gmail message");
+      appendLog("AI (Matching/Ranking Core)", "Checked live inbox", "→ real Gmail message");
+      setSelectedId(item.id);
+      setLiveInboxOpen(false);
     },
-    onError: (err: unknown) => {
-      toast.error(err instanceof Error ? err.message : "Batch matching run failed");
-    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to run matching on this message"),
   });
 
   const outcome = deriveOutcome(payload);
@@ -544,34 +544,72 @@ export function SubmissionMarketMatching() {
       <PageHeader
         eyebrow="Workflow 01 · Live"
         title="Submission Market Matching"
-        description="Wired to Backend-AI-OS's /api/es/market-matching — real ranked-carrier data from the Workflow_10 fixture set (submission_01..06). Sections the API has no data for yet say so explicitly rather than showing invented numbers."
+        description="Wired to Backend-AI-OS's /api/es/market-matching — real ranked-carrier data from the tenant's connected Gmail inbox. Sections the API has no data for yet say so explicitly rather than showing invented numbers."
         actions={
-          <>
-            <Button
-              variant="secondary"
-              disabled
-              title="Not wired — there's no submission-upload endpoint yet, this pass only runs the Workflow_10 fixtures"
-            >
-              <Upload className="h-4 w-4" />
-              Upload submission
-            </Button>
-            <Button
-              variant="primary"
-              disabled={runBatchMutation.isPending || unrunRefs.length === 0}
-              onClick={() => runBatchMutation.mutate()}
-            >
-              {runBatchMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {unrunRefs.length === 0
-                ? "All fixtures run"
-                : `Run batch matching (${unrunRefs.length})`}
-            </Button>
-          </>
+          <Button
+            variant="primary"
+            onClick={() => setLiveInboxOpen((v) => !v)}
+            title="Runs matching against a real Gmail message via the tenant's connected Nango integration (Settings -> Integrations); requires CONNECTORS_MODE=live"
+          >
+            <Mail className="h-4 w-4" />
+            Check live inbox
+          </Button>
         }
       />
+
+      {liveInboxOpen && (
+        <div className="mb-5">
+          <Panel
+            title="Check a real inbox message"
+            subtitle="GET /api/es/market-matching/live-inbox — real Gmail via the connected Nango integration"
+            actions={
+              <Button variant="ghost" onClick={() => setLiveInboxOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            {liveInboxQuery.isLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading real inbox messages…
+              </div>
+            )}
+            {liveInboxQuery.isError && (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                {liveInboxQuery.error instanceof Error
+                  ? liveInboxQuery.error.message
+                  : "Failed to load real inbox messages."}
+              </div>
+            )}
+            {!liveInboxQuery.isLoading && !liveInboxQuery.isError && (
+              (liveInboxQuery.data ?? []).length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  No real messages found — connect Gmail in Settings, switch
+                  CONNECTORS_MODE=live, and make sure the inbox has recent mail.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(liveInboxQuery.data ?? []).map((m) => (
+                    <Button
+                      key={m.id}
+                      variant="secondary"
+                      disabled={runLiveInboxMutation.isPending}
+                      onClick={() => runLiveInboxMutation.mutate(m.id)}
+                    >
+                      {runLiveInboxMutation.isPending && runLiveInboxMutation.variables === m.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Mail className="h-4 w-4" />
+                      )}
+                      {m.subject}
+                    </Button>
+                  ))}
+                </div>
+              )
+            )}
+          </Panel>
+        </div>
+      )}
 
       {listQuery.isLoading && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
@@ -590,10 +628,11 @@ export function SubmissionMarketMatching() {
       {!listQuery.isLoading && !listQuery.isError && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)]">
           {/* Inbox */}
-          <Panel title="Submission inbox" subtitle={`${items.length} run · Workflow_10 fixtures`}>
+          <Panel title="Submission inbox" subtitle={`${items.length} run · real Gmail`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No submissions run yet — click "Run batch matching" to process the fixture set.
+                No live submissions yet — click "Check live inbox" to run matching against a
+                real Gmail message.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -638,9 +677,9 @@ export function SubmissionMarketMatching() {
                       {selectedRow.submission_id ?? "Unknown submission"}
                     </h2>
                     <div className="mt-2 text-[11px] text-muted-foreground">
-                      Workflow_10 fixture — there's no submission-metadata endpoint yet, so only the
-                      ranking data below is real; insured/industry/state/TIV/premium aren't shown
-                      because the API has no such fields for this workflow.
+                      Real Gmail message — there's no submission-metadata endpoint yet, so only
+                      the ranking data below is real; insured/industry/state/TIV/premium aren't
+                      shown because the API has no such fields for this workflow.
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1442,7 +1481,12 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
     queryKey: ["package-assembly", "list"],
     queryFn: listPackageAssembly,
   });
-  const items = listQuery.data ?? [];
+  // Live is the only ingestion path now — hides Workflow_10/Workflow_11
+  // fixture-sourced packages still sitting in the database rather than
+  // deleting them (same pattern as Market Matching's live-only cutover).
+  const items = (listQuery.data ?? []).filter(
+    (i) => !/^(submission_\d+|SUB-\d+)/i.test(i.submission_id ?? ""),
+  );
 
   const detailQuery = useQuery({
     queryKey: ["package-assembly", "detail", selectedId],
@@ -1463,20 +1507,6 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
     ]);
   }
 
-  const runMutation = useMutation({
-    mutationFn: (scenarioRef: string) => runPackageAssembly(scenarioRef),
-    onSuccess: (createdItems, scenarioRef) => {
-      queryClient.invalidateQueries({ queryKey: ["package-assembly"] });
-      toast.success(
-        `${scenarioRef}: assembled ${createdItems.length} package${createdItems.length === 1 ? "" : "s"}`,
-      );
-      if (createdItems[0]) setSelectedId(createdItems[0].id);
-    },
-    onError: (err: unknown, scenarioRef) => {
-      toast.error(err instanceof Error ? err.message : `Failed to run ${scenarioRef}`);
-    },
-  });
-
   const runFromMarketMatchingMutation = useMutation({
     mutationFn: () => runPackageAssemblyFromMarketMatching(upstreamMarketMatchingItemId!),
     onSuccess: (createdItems) => {
@@ -1495,7 +1525,7 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
       <PageHeader
         eyebrow="Workflow 02 · Live"
         title="Submission Package Assembly"
-        description="Wired to Backend-AI-OS's /api/es/package-assembly — real per-carrier packages from the Workflow_11 fixture scenarios."
+        description="Wired to Backend-AI-OS's /api/es/package-assembly — real per-carrier packages assembled from a real Market Matching selection."
         actions={
           <Button variant="secondary" onClick={goToMatching}>
             ← Back to Market Matching
@@ -1528,33 +1558,11 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
               Assemble from this selection
             </Button>
           ) : (
-            "No Market Matching review item id was passed — run one of the fixture scenarios below instead."
+            "No Market Matching review item id was passed — go back to Market Matching and " +
+            "select a submission to assemble a live package."
           )}
         </div>
       )}
-
-      <Panel
-        title="Scenario fixtures"
-        subtitle="Workflow_11 — each already has a carrier selection baked in"
-      >
-        <div className="flex flex-wrap gap-2">
-          {FIXTURE_SCENARIO_REFS.map((ref) => (
-            <Button
-              key={ref}
-              variant="secondary"
-              disabled={runMutation.isPending}
-              onClick={() => runMutation.mutate(ref)}
-            >
-              {runMutation.isPending && runMutation.variables === ref ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              Run {ref}
-            </Button>
-          ))}
-        </div>
-      </Panel>
 
       {listQuery.isLoading && (
         <div className="mt-4 flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
@@ -1573,7 +1581,7 @@ export function PackageAssembly({ search = {} }: { search?: Record<string, unkno
           <Panel title="Packages" subtitle={`${items.length} generated`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No packages yet — run a scenario above.
+                No live packages yet — go to Market Matching and assemble from a real selection.
               </div>
             ) : (
               <div className="divide-y divide-border">
