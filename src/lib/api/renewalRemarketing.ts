@@ -30,6 +30,27 @@ export function runRenewalRemarketing(scenarioRef: string) {
   return api.post<ReviewItemOut>(`${BASE}/run`, { scenario_ref: scenarioRef });
 }
 
+export interface LiveBind {
+  bind_id: string;
+  named_insured: string | null;
+  carrier_name: string | null;
+}
+
+/** Every real Binder Issuance bind for this tenant, for the "Check live
+ * renewal" picker. */
+export function listLiveBinds() {
+  return api.get<LiveBind[]>(`${BASE}/live-binds`);
+}
+
+/** Additive alongside the fixture-scenario run above: a real trigger-stage
+ * review built from an ACTUAL Binder Issuance bind + real Endorsement
+ * Processing history for it — genuine Binder Issuance/Endorsement
+ * Processing -> Renewal Remarketing hand-off (FR-2), not another fixture
+ * scenario. */
+export function runRenewalRemarketingLive(bindId: string) {
+  return api.post<ReviewItemOut>(`${BASE}/run-live`, { bind_id: bindId });
+}
+
 /** "Approve light check" / "Approve full remarket" — both use this same
  * action. Genuinely re-invokes MarketMatchingPipeline; 409s if the decision
  * was NO_REMARKET. */

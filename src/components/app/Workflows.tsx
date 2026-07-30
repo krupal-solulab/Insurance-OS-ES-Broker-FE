@@ -79,8 +79,10 @@ import {
   escalateRenewalRemarketing,
   getRenewalRemarketing,
   initiateRemarket,
+  listLiveBinds,
   listRenewalRemarketing,
   runRenewalRemarketing,
+  runRenewalRemarketingLive,
   type ComparisonOutputOut,
   type FixtureScenario as RenewalFixtureScenario,
   type RemarketDecisionPayload,
@@ -4021,6 +4023,29 @@ export function RenewalRemarketing() {
       toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
   });
 
+  const [liveBindsOpen, setLiveBindsOpen] = useState(false);
+  const liveBindsQuery = useQuery({
+    queryKey: ["renewal-remarketing", "live-binds"],
+    queryFn: listLiveBinds,
+    enabled: liveBindsOpen,
+  });
+  const runLiveMutation = useMutation({
+    mutationFn: (bindId: string) => runRenewalRemarketingLive(bindId),
+    onSuccess: (item) => {
+      queryClient.invalidateQueries({ queryKey: ["renewal-remarketing"] });
+      toast.success("Live renewal review generated from real bind + endorsement data");
+      appendLog(
+        "AI (Matching/Ranking Core)",
+        "Checked live renewal",
+        `→ real Binder Issuance + Endorsement Processing data`,
+      );
+      setSelectedId(item.id);
+      setLiveBindsOpen(false);
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to check live renewal"),
+  });
+
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
@@ -4028,12 +4053,75 @@ export function RenewalRemarketing() {
         title="Renewal Remarketing"
         description="Detects exposure and loss changes plus incumbent responsiveness on bound policies approaching renewal, and produces a graduated remarket recommendation."
         actions={
-          <Button variant="primary" onClick={() => setNewReviewOpen((v) => !v)}>
-            <Sparkles className="h-4 w-4" />
-            New renewal review
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setLiveBindsOpen((v) => !v)}
+              title="Builds a real renewal review from an actual Binder Issuance bind, correctly cross-checking Endorsement Processing history so an already-endorsed exposure change is never double-counted"
+            >
+              <Clock className="h-4 w-4" />
+              Check live renewal
+            </Button>
+            <Button variant="primary" onClick={() => setNewReviewOpen((v) => !v)}>
+              <Sparkles className="h-4 w-4" />
+              New renewal review
+            </Button>
+          </div>
         }
       />
+
+      {liveBindsOpen && (
+        <div className="mb-5">
+          <Panel
+            title="Check a real bind's renewal"
+            subtitle="POST /api/es/renewal-remarketing/run-live — real Binder Issuance + Endorsement Processing data"
+            actions={
+              <Button variant="ghost" onClick={() => setLiveBindsOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            {liveBindsQuery.isLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading real binds…
+              </div>
+            )}
+            {liveBindsQuery.isError && (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                {liveBindsQuery.error instanceof Error
+                  ? liveBindsQuery.error.message
+                  : "Failed to load real binds."}
+              </div>
+            )}
+            {!liveBindsQuery.isLoading && !liveBindsQuery.isError && (
+              (liveBindsQuery.data ?? []).length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  No real Binder Issuance binds yet — run one from Binder & Policy Issuance first.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(liveBindsQuery.data ?? []).map((b) => (
+                    <Button
+                      key={b.bind_id}
+                      variant="secondary"
+                      disabled={runLiveMutation.isPending}
+                      onClick={() => runLiveMutation.mutate(b.bind_id)}
+                    >
+                      {runLiveMutation.isPending && runLiveMutation.variables === b.bind_id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Clock className="h-4 w-4" />
+                      )}
+                      {b.named_insured ?? b.bind_id} ({b.carrier_name ?? "unknown carrier"})
+                    </Button>
+                  ))}
+                </div>
+              )
+            )}
+          </Panel>
+        </div>
+      )}
 
       {newReviewOpen && (
         <div className="mb-5">
