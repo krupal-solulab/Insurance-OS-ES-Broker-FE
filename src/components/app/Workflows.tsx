@@ -24,7 +24,6 @@ import {
   type PackageAssemblyPayload,
 } from "@/lib/api/packageAssembly";
 import {
-  FIXTURE_TRIGGERS,
   actOnAgentCommunication,
   complianceClear,
   getAgentCommunication,
@@ -33,30 +32,29 @@ import {
   type AgentCommActionVerb,
 } from "@/lib/api/agentCommunication";
 import {
-  FIXTURE_SCENARIOS as QUOTE_FIXTURE_SCENARIOS,
   getQuoteComparison,
+  listLiveInbox as listQuoteComparisonLiveInbox,
   listQuoteComparison,
   markLapsed,
   requestRevisedTerms,
-  runQuoteComparison,
+  runQuoteComparisonLive,
   selectQuote,
   type ComparisonPayload,
   type ExtractedQuoteOut,
-  type FixtureScenario,
 } from "@/lib/api/quoteComparison";
 import {
-  FIXTURE_SCENARIOS as BINDER_FIXTURE_SCENARIOS,
+  attachLiveConfirmation,
+  attachLiveIssuedPolicy,
   escalateBinderIssuance,
   getBinderIssuance,
   listBinderIssuance,
+  listLiveInbox as listBinderLiveInbox,
   resolveConfirmationDiscrepancy,
   resolvePolicyDiscrepancy,
-  runBinderIssuance,
   runBinderIssuanceFromQuote,
   type BindCoordinationPayload,
   type DiscrepancyOut,
   type DiscrepancyResolution,
-  type FixtureScenario as BinderFixtureScenario,
   type PolicyDiscrepancyResolution,
 } from "@/lib/api/binderIssuance";
 import {
@@ -1216,6 +1214,7 @@ function CarrierPackageCard({
   payload: PackageAssemblyPayload;
   onActed: (who: string, what: string, ctx: string) => void;
 }) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [manualValues, setManualValues] = useState<Record<string, string>>({});
   const [pendingAction, setPendingAction] = useState<PackageActionVerb | null>(null);
@@ -1436,6 +1435,25 @@ function CarrierPackageCard({
             {pendingAction === "send" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             <Clock className="h-3.5 w-3.5" />
             Mark as sent
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={!payload.submission_id}
+            title={
+              !payload.submission_id
+                ? "No real submission id on this package yet"
+                : "Once a carrier replies with terms, check Quote Comparison's live inbox for this submission"
+            }
+            onClick={() =>
+              navigate({
+                to: "/app/workflows/$slug",
+                params: { slug: "quote-comparison" },
+                search: { submissionId: payload.submission_id },
+              })
+            }
+          >
+            <Mail className="h-3.5 w-3.5" />
+            Check for carrier response
           </Button>
         </div>
       </div>
@@ -1748,7 +1766,13 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
     queryKey: ["agent-communication", "list"],
     queryFn: listAgentCommunication,
   });
-  const items = listQuery.data ?? [];
+  // Live is the only ingestion path now — hides fixture/test-data threads
+  // still sitting in the database rather than deleting them (same pattern
+  // as Workflows 1/2). Real Gmail-sourced submission ids are always a
+  // 16-character hex string; fixture ids use far more varied shapes here
+  // (SUB-/BIND-/TEST-VERIFY-/scenario_/submission_...), so an allowlist on
+  // the real id shape is more robust than blocklisting every fixture prefix.
+  const items = (listQuery.data ?? []).filter((i) => /^[0-9a-f]{16}$/i.test(i.submission_id ?? ""));
 
   useEffect(() => {
     if (!selectedId && listQuery.data && listQuery.data.length > 0) {
@@ -1960,34 +1984,22 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
         <div className="mt-4">
           <Panel
             title="Start a new communication"
-            subtitle="Runs the real backend pipeline — POST /api/es/agent-communication/run"
+            subtitle="Real communications are drafted automatically — see below"
             actions={
               <Button variant="ghost" onClick={() => setNewEmailOpen(false)}>
                 Close
               </Button>
             }
           >
-            <div className="flex flex-wrap gap-2">
-              {FIXTURE_TRIGGERS.map((t) => (
-                <Button
-                  key={t.ref}
-                  variant="secondary"
-                  disabled={runMutation.isPending}
-                  onClick={() => runMutation.mutate({ trigger: t.trigger, label: t.label })}
-                >
-                  {runMutation.isPending && runMutation.variables?.label === t.label ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  {t.label}
-                </Button>
-              ))}
+            <div className="text-sm text-muted-foreground">
+              Submission acknowledgments, missing-info requests, and no-market notices draft
+              themselves automatically the moment Market Matching or Package Assembly runs on a
+              real submission — no action needed here.
             </div>
             <div className="mt-3 text-[11px] text-muted-foreground">
-              Or select an existing thread on the left and use "Log outcome" / "Generate
-              follow-up" in the context panel to add a Quote/Terms Summary, Placement
-              Confirmation, or No-Response Follow-up to it.
+              For a Quote/Terms Summary, Placement Confirmation, or No-Response Follow-up: select
+              an existing real thread on the left, then use "Log outcome" / "Generate follow-up"
+              in the context panel.
             </div>
           </Panel>
         </div>
@@ -2039,7 +2051,20 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
                   <span className="truncate font-mono text-xs text-muted-foreground">
                     {row.submission_id ?? row.id}
                   </span>
-                  <DraftStatusBadge status={row.status} />
+                  {(row.named_insured || row.carrier_name) && (
+                    <span className="truncate text-xs">
+                      {row.named_insured ?? "Unknown insured"}
+                      {row.carrier_name ? ` · ${row.carrier_name}` : ""}
+                    </span>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    {row.trigger_type && (
+                      <span className="truncate text-[10px] text-muted-foreground">
+                        {row.trigger_type.replaceAll("_", " ")}
+                      </span>
+                    )}
+                    <DraftStatusBadge status={row.status} />
+                  </div>
                 </button>
               ))}
             </ul>
@@ -2494,12 +2519,15 @@ function daysUntil(dateStr: string): number | null {
   return Math.ceil((target.getTime() - MOCK_TODAY.getTime()) / 86_400_000);
 }
 
-export function QuoteComparison() {
+export function QuoteComparison({ search = {} }: { search?: Record<string, unknown> }) {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [newComparisonOpen, setNewComparisonOpen] = useState(false);
+  const [liveInboxOpen, setLiveInboxOpen] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [bindOutcome, setBindOutcome] = useState<string | null>(null);
+
+  const upstreamSubmissionId =
+    typeof search.submissionId === "string" ? search.submissionId : undefined;
 
   function appendLog(who: string, what: string, ctx: string) {
     setLog((prev) => [
@@ -2518,13 +2546,17 @@ export function QuoteComparison() {
     queryKey: ["quote-comparison", "list"],
     queryFn: listQuoteComparison,
   });
-  const items = listQuery.data ?? [];
+  // Live is the only ingestion path shown here now — hides Workflow_13
+  // fixture-scenario comparisons still sitting in the database rather than
+  // deleting them (same pattern as the other converted workflows). Real
+  // submission ids are the 16-char lowercase hex Gmail message id shape.
+  const items = (listQuery.data ?? []).filter((i) => /^[0-9a-f]{16}$/i.test(i.submission_id ?? ""));
 
   useEffect(() => {
-    if (!selectedId && listQuery.data && listQuery.data.length > 0) {
-      setSelectedId(listQuery.data[0].id);
+    if (!selectedId && items.length > 0) {
+      setSelectedId(items[0].id);
     }
-  }, [listQuery.data, selectedId]);
+  }, [items, selectedId]);
 
   const detailQuery = useQuery({
     queryKey: ["quote-comparison", "detail", selectedId],
@@ -2534,18 +2566,27 @@ export function QuoteComparison() {
   });
   const payload = detailQuery.data?.payload ?? null;
 
-  const runMutation = useMutation({
-    mutationFn: (s: FixtureScenario) => runQuoteComparison(s.ref),
-    onSuccess: (item, s) => {
+  const liveInboxQuery = useQuery({
+    queryKey: ["quote-comparison", "live-inbox", upstreamSubmissionId],
+    queryFn: () => listQuoteComparisonLiveInbox(upstreamSubmissionId!),
+    enabled: liveInboxOpen && Boolean(upstreamSubmissionId),
+  });
+
+  const runLiveMutation = useMutation({
+    mutationFn: (messageId: string) => runQuoteComparisonLive(upstreamSubmissionId!, messageId),
+    onSuccess: (item) => {
       queryClient.invalidateQueries({ queryKey: ["quote-comparison"] });
-      toast.success(`${s.label}: comparison generated`);
-      appendLog("AI (Matching/Ranking Core)", "Comparison generated", s.label);
+      toast.success("Comparison updated with a real carrier response");
+      appendLog(
+        "AI (Matching/Ranking Core)",
+        "Checked live inbox",
+        `→ real Gmail message for ${upstreamSubmissionId}`,
+      );
       setSelectedId(item.id);
-      setNewComparisonOpen(false);
+      setLiveInboxOpen(false);
     },
-    onError: (err: unknown, s) => {
-      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`);
-    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to run comparison on this message"),
   });
 
   function recordBindOutcome(outcome: string) {
@@ -2560,13 +2601,22 @@ export function QuoteComparison() {
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Workflow 04"
+        eyebrow="Workflow 04 · Live"
         title="Quote Comparison & Recommendation"
         description="Carrier quote and declination emails ingested, terms normalized to one schema, subjectivities classified by materiality — with a drafted recommendation."
         actions={
-          <Button variant="primary" onClick={() => setNewComparisonOpen((v) => !v)}>
-            <Send className="h-4 w-4" />
-            New comparison
+          <Button
+            variant="primary"
+            disabled={!upstreamSubmissionId}
+            title={
+              !upstreamSubmissionId
+                ? 'Open this from a Package Assembly package\'s "Check for carrier response" button first'
+                : "Runs the real backend pipeline against a real Gmail message via the tenant's connected Nango integration (Settings -> Integrations); requires CONNECTORS_MODE=live"
+            }
+            onClick={() => setLiveInboxOpen((v) => !v)}
+          >
+            <Mail className="h-4 w-4" />
+            Check live inbox
           </Button>
         }
       />
@@ -2601,34 +2651,57 @@ export function QuoteComparison() {
         />
       </div>
 
-      {newComparisonOpen && (
+      {liveInboxOpen && upstreamSubmissionId && (
         <div className="mb-5">
           <Panel
-            title="Start a new comparison"
-            subtitle="Runs the real backend pipeline — POST /api/es/quote-comparison/run"
+            title="Check a real inbox message"
+            subtitle={`GET /api/es/quote-comparison/live-inbox — real Gmail via the connected Nango integration, matched to ${upstreamSubmissionId}'s real named insured`}
             actions={
-              <Button variant="ghost" onClick={() => setNewComparisonOpen(false)}>
+              <Button variant="ghost" onClick={() => setLiveInboxOpen(false)}>
                 Close
               </Button>
             }
           >
-            <div className="flex flex-wrap gap-2">
-              {QUOTE_FIXTURE_SCENARIOS.map((s) => (
-                <Button
-                  key={s.ref}
-                  variant="secondary"
-                  disabled={runMutation.isPending}
-                  onClick={() => runMutation.mutate(s)}
-                >
-                  {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  {s.label}
-                </Button>
-              ))}
-            </div>
+            {liveInboxQuery.isLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading real inbox messages…
+              </div>
+            )}
+            {liveInboxQuery.isError && (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                {liveInboxQuery.error instanceof Error
+                  ? liveInboxQuery.error.message
+                  : "Failed to load real inbox messages."}
+              </div>
+            )}
+            {!liveInboxQuery.isLoading && !liveInboxQuery.isError && (
+              (liveInboxQuery.data ?? []).length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  No real messages found yet — connect Gmail in Settings, switch
+                  CONNECTORS_MODE=live, and make sure the carrier has replied to this
+                  submission's named insured.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(liveInboxQuery.data ?? []).map((m) => (
+                    <Button
+                      key={m.id}
+                      variant="secondary"
+                      disabled={runLiveMutation.isPending}
+                      onClick={() => runLiveMutation.mutate(m.id)}
+                    >
+                      {runLiveMutation.isPending && runLiveMutation.variables === m.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Mail className="h-4 w-4" />
+                      )}
+                      {m.subject}
+                    </Button>
+                  ))}
+                </div>
+              )
+            )}
           </Panel>
         </div>
       )}
@@ -2652,7 +2725,8 @@ export function QuoteComparison() {
           <Panel title="Comparisons" subtitle={`${items.length} generated`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No comparisons yet — click "New comparison" to run one of the 6 real scenarios.
+                No live comparisons yet — open this page from a Package Assembly package's
+                "Check for carrier response" button, then click "Check live inbox."
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -3066,9 +3140,7 @@ function LiveComparisonCard({
    ============================================================ */
 
 export function BinderIssuance() {
-  const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [newBinderOpen, setNewBinderOpen] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
 
   function appendLog(who: string, what: string, ctx: string) {
@@ -3088,13 +3160,19 @@ export function BinderIssuance() {
     queryKey: ["binder-issuance", "list"],
     queryFn: listBinderIssuance,
   });
-  const items = listQuery.data ?? [];
+  // Live is the only ingestion path shown here now — a bind item is only
+  // ever created via the "Start binder" handoff from Quote Comparison, so
+  // there's no standalone "new binder" concept once live (same disable-
+  // not-delete treatment as every other converted workflow). Hides
+  // Workflow_14 fixture-scenario binders still sitting in the database
+  // rather than deleting them.
+  const items = (listQuery.data ?? []).filter((i) => /^[0-9a-f]{16}$/i.test(i.submission_id ?? ""));
 
   useEffect(() => {
-    if (!selectedId && listQuery.data && listQuery.data.length > 0) {
-      setSelectedId(listQuery.data[0].id);
+    if (!selectedId && items.length > 0) {
+      setSelectedId(items[0].id);
     }
-  }, [listQuery.data, selectedId]);
+  }, [items, selectedId]);
 
   const detailQuery = useQuery({
     queryKey: ["binder-issuance", "detail", selectedId],
@@ -3104,64 +3182,13 @@ export function BinderIssuance() {
   });
   const payload = detailQuery.data?.payload ?? null;
 
-  const runMutation = useMutation({
-    mutationFn: (s: BinderFixtureScenario) => runBinderIssuance(s.ref),
-    onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["binder-issuance"] });
-      toast.success(`${s.label}: coordination generated`);
-      appendLog("AI (Matching/Ranking Core)", "Bind coordination record generated", s.label);
-      setSelectedId(item.id);
-      setNewBinderOpen(false);
-    },
-    onError: (err: unknown, s) =>
-      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
-  });
-
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Workflow 05"
+        eyebrow="Workflow 05 · Live"
         title="Binder & Policy Issuance Coordination"
         description="From selected quote to bound policy — subjectivity clearance, carrier bind confirmation, and issued-policy reconciliation, all checked against what was actually agreed, never assumed."
-        actions={
-          <Button variant="primary" onClick={() => setNewBinderOpen((v) => !v)}>
-            <Sparkles className="h-4 w-4" />
-            New binder
-          </Button>
-        }
       />
-
-      {newBinderOpen && (
-        <div className="mb-5">
-          <Panel
-            title="Start a new bind coordination"
-            subtitle="Runs the real backend pipeline — POST /api/es/binder-issuance/run"
-            actions={
-              <Button variant="ghost" onClick={() => setNewBinderOpen(false)}>
-                Close
-              </Button>
-            }
-          >
-            <div className="flex flex-wrap gap-2">
-              {BINDER_FIXTURE_SCENARIOS.map((s) => (
-                <Button
-                  key={s.ref}
-                  variant="secondary"
-                  disabled={runMutation.isPending}
-                  onClick={() => runMutation.mutate(s)}
-                >
-                  {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  {s.label}
-                </Button>
-              ))}
-            </div>
-          </Panel>
-        </div>
-      )}
 
       {listQuery.isLoading && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
@@ -3180,7 +3207,8 @@ export function BinderIssuance() {
           <Panel title="In-progress binders" subtitle={`${items.length} generated`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No binders yet — click "New binder" to run one of the 6 real scenarios.
+                No live binders yet — select a quote in Quote Comparison and click "Start
+                binder" to create one.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -3404,6 +3432,46 @@ function LiveBinderCard({
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Escalate failed"),
   });
 
+  // Which real document this bind needs checked for next — READY means no
+  // confirmation exists yet (BI-03); once SENT and confirmation-clean, the
+  // next real thing to check for is the issued policy (BI-05). Neither
+  // button shows once BLOCKED, mid-discrepancy, or already fully delivered.
+  const [liveInboxOpen, setLiveInboxOpen] = useState(false);
+  const liveInboxKind: "confirmation" | "policy" | null =
+    payload.bind_order_status === "READY"
+      ? "confirmation"
+      : payload.bind_order_status === "SENT" &&
+          payload.issued_policy_reconciliation.status === "NOT_YET_RECEIVED" &&
+          (payload.carrier_confirmation.reconciliation_status === "CLEAN" ||
+            payload.carrier_confirmation.reconciliation_status === "BROKER_RESOLVED")
+        ? "policy"
+        : null;
+
+  const liveInboxQuery = useQuery({
+    queryKey: ["binder-issuance", "live-inbox", itemId],
+    queryFn: () => listBinderLiveInbox(itemId),
+    enabled: liveInboxOpen,
+  });
+
+  const attachMutation = useMutation({
+    mutationFn: (messageId: string) =>
+      liveInboxKind === "policy"
+        ? attachLiveIssuedPolicy(itemId, messageId)
+        : attachLiveConfirmation(itemId, messageId),
+    onSuccess: (item) => {
+      const what =
+        liveInboxKind === "policy"
+          ? "Checked live inbox — attached the issued policy"
+          : "Checked live inbox — attached the bind confirmation";
+      onActed("You", what, `${who} → status "${item.status}"`);
+      toast.success("Real reconciliation run against the attached document");
+      queryClient.invalidateQueries({ queryKey: ["binder-issuance"] });
+      setLiveInboxOpen(false);
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to attach this message"),
+  });
+
   function copyBindOrder() {
     const t = payload.requested_bind_terms;
     const lines = [
@@ -3442,6 +3510,16 @@ function LiveBinderCard({
           <div className="mt-1 text-[11px] text-muted-foreground">{payload.carrier_name}</div>
         </div>
         <div className="flex items-center gap-2">
+          {liveInboxKind && (
+            <Button
+              variant="primary"
+              onClick={() => setLiveInboxOpen((v) => !v)}
+              title="Requires Gmail connected + backend CONNECTORS_MODE=live"
+            >
+              <Mail className="h-3.5 w-3.5" />
+              {liveInboxKind === "policy" ? "Check for issued policy" : "Check for bind confirmation"}
+            </Button>
+          )}
           <Button variant="ghost" onClick={copyBindOrder}>
             <Copy className="h-3.5 w-3.5" />
             Copy bind order
@@ -3449,6 +3527,65 @@ function LiveBinderCard({
           <FoundationBadge kind="matching" />
         </div>
       </div>
+
+      {liveInboxOpen && liveInboxKind && (
+        <div className="mt-4">
+          <Panel
+            title={
+              liveInboxKind === "policy"
+                ? "Check for a real issued policy"
+                : "Check for a real bind confirmation"
+            }
+            subtitle="GET /api/es/binder-issuance/live-inbox — real Gmail via the connected Nango integration"
+            actions={
+              <Button variant="ghost" onClick={() => setLiveInboxOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            {liveInboxQuery.isLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading real inbox messages…
+              </div>
+            )}
+            {liveInboxQuery.isError && (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                {liveInboxQuery.error instanceof Error
+                  ? liveInboxQuery.error.message
+                  : "Failed to load real inbox messages."}
+              </div>
+            )}
+            {!liveInboxQuery.isLoading && !liveInboxQuery.isError && (
+              (liveInboxQuery.data ?? []).length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  No real messages found yet — connect Gmail in Settings, switch
+                  CONNECTORS_MODE=live, and make sure the carrier has replied to this bind's
+                  named insured.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(liveInboxQuery.data ?? []).map((m) => (
+                    <Button
+                      key={m.id}
+                      variant="secondary"
+                      disabled={attachMutation.isPending}
+                      onClick={() => attachMutation.mutate(m.id)}
+                    >
+                      {attachMutation.isPending && attachMutation.variables === m.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Mail className="h-4 w-4" />
+                      )}
+                      {m.subject}
+                    </Button>
+                  ))}
+                </div>
+              )
+            )}
+          </Panel>
+        </div>
+      )}
 
       {unresolvedMaterial.length > 0 && (
         <div className="mt-4 flex items-start gap-2 rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3">

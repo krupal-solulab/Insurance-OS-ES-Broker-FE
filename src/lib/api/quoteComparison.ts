@@ -49,6 +49,31 @@ export function markLapsed(itemId: string) {
   return api.post<ReviewItemOut>(`${BASE}/${itemId}/mark-lapsed`);
 }
 
+export interface LiveInboxMessage {
+  id: string;
+  subject: string;
+}
+
+/** Real Gmail messages that could be a carrier response for this real
+ * submission — matched server-side by the submission's own real named
+ * insured, never the whole inbox. Requires Gmail connected + backend
+ * CONNECTORS_MODE=live. */
+export function listLiveInbox(submissionId: string) {
+  return api.get<LiveInboxMessage[]>(
+    `${BASE}/live-inbox?submission_id=${encodeURIComponent(submissionId)}`,
+  );
+}
+
+/** Persists the picked real carrier-response email and re-runs the
+ * comparison against every real response accumulated so far for this
+ * submission (FR-3) — not just the latest one. */
+export function runQuoteComparisonLive(submissionId: string, messageId: string) {
+  return api.post<ReviewItemOut>(`${BASE}/run-live`, {
+    submission_id: submissionId,
+    message_id: messageId,
+  });
+}
+
 export interface FixtureScenario {
   ref: string;
   label: string;

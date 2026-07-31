@@ -61,6 +61,34 @@ export function escalateBinderIssuance(itemId: string) {
   return api.post<ReviewItemOut>(`${BASE}/${itemId}/escalate`);
 }
 
+export interface LiveInboxMessage {
+  id: string;
+  subject: string;
+}
+
+/** Real Gmail messages that could be this bind's carrier confirmation OR
+ * its eventual issued policy — matched server-side by the bind's own real
+ * named insured. Requires Gmail connected + backend CONNECTORS_MODE=live. */
+export function listLiveInbox(itemId: string) {
+  return api.get<LiveInboxMessage[]>(`${BASE}/live-inbox?item_id=${encodeURIComponent(itemId)}`);
+}
+
+/** Attaches a real carrier bind-confirmation email — advances READY -> SENT
+ * and runs BI-03 reconciliation for real. */
+export function attachLiveConfirmation(itemId: string, messageId: string) {
+  return api.post<ReviewItemOut>(`${BASE}/${itemId}/attach-live-confirmation`, {
+    message_id: messageId,
+  });
+}
+
+/** Attaches a real issued-policy document — runs BI-05 reconciliation
+ * against the confirmed bind terms. */
+export function attachLiveIssuedPolicy(itemId: string, messageId: string) {
+  return api.post<ReviewItemOut>(`${BASE}/${itemId}/attach-live-policy`, {
+    message_id: messageId,
+  });
+}
+
 export interface FixtureScenario {
   ref: string;
   label: string;

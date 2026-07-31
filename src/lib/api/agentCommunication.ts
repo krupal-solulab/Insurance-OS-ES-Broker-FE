@@ -9,8 +9,16 @@ import type { components } from "./schema";
 // Qualified with the module path — market_matching/package_assembly define
 // their own `ReviewItemOut`/`RunRequest` classes too (see marketMatching.ts's
 // comment on this).
+// Extended with carrier_name/named_insured/trigger_type — list-view preview
+// fields added to the backend's ReviewItemOut so threads sharing the same
+// submission_id (one per matched carrier) are distinguishable in the list
+// without opening each one; not yet in the generated schema.
 export type ReviewItemOut =
-  components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"];
+  components["schemas"]["verticals__es__workflows__agent_communication__router__ReviewItemOut"] & {
+    carrier_name?: string | null;
+    named_insured?: string | null;
+    trigger_type?: string | null;
+  };
 export type DraftCommunicationOut = components["schemas"]["DraftCommunicationOut"];
 export type GroundingCitationOut = components["schemas"]["GroundingCitationOut"];
 export type AgentCommActionVerb = "approve" | "edit" | "send" | "discard";
