@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/form";
 import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
 import { simulateRequest } from "@/lib/simulate";
+import { login } from "@/lib/api/auth";
 
 type Mode = "login" | "signup";
 type Status = "idle" | "loading" | "success" | "error";
@@ -113,9 +114,11 @@ function LoginForm({ onSwitch, onDone }: { onSwitch: () => void; onDone: () => v
     setStatus("loading");
     setErrorMsg("");
     try {
-      // TODO: replace with a real auth call (e.g. Supabase Auth signInWithPassword).
-      // Nothing here checks a real password or creates a real session yet.
-      await simulateRequest({ email: values.email });
+      // Real email -> role lookup (core/auth/router.py). Still no real
+      // password check — the password field stays required for the
+      // existing UX, but only the email determines who you're logged in
+      // as; see identity.ts for how that's stored per browser tab/window.
+      await login(values.email);
       setStatus("success");
       setTimeout(() => {
         onDone();

@@ -38,6 +38,45 @@ export function escalateDiligentSearch(itemId: string) {
   return api.post<ReviewItemOut>(`${BASE}/${itemId}/escalate`);
 }
 
+export interface LiveStubSubmission {
+  item_id: string;
+  submission_id: string | null;
+}
+
+/** Real submissions Market Matching's MM-07 has already flagged (a real,
+ * linked stub review item exists) but no broker has completed a real
+ * search for yet. No named_insured is available here — Market Matching's
+ * real payload never carries one — so these are shown by submission_id. */
+export function listLiveSubmissions() {
+  return api.get<LiveStubSubmission[]>(`${BASE}/live-submissions`);
+}
+
+export interface LiveDeclinationInput {
+  carrier: string;
+  date: string | null;
+  written_evidence: boolean;
+}
+
+export interface LiveStateInput {
+  state: string;
+  status: "exempt" | "required" | "pending";
+  export_list_note?: string | null;
+  admitted_declinations_required?: number | null;
+  declinations: LiveDeclinationInput[];
+}
+
+/** Runs a real per-state determination from broker/compliance-supplied
+ * facts and declination records for a real MM-07-seeded submission —
+ * updates that SAME review item in place. The strict DS-01..DS-04
+ * sufficiency/generation gate on the backend is unchanged; this only
+ * supplies real inputs a human actually knows, never a shortcut around it. */
+export function runLiveDiligentSearch(
+  itemId: string,
+  body: { submission_id?: string | null; named_insured?: string | null; states: LiveStateInput[] },
+) {
+  return api.post<ReviewItemOut>(`${BASE}/${itemId}/run-live`, body);
+}
+
 export interface FixtureScenario {
   ref: string;
   label: string;

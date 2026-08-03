@@ -10,11 +10,31 @@
 import { api } from "./client";
 import type { components } from "./schema";
 
+/** PR-03 (time-to-placement) — added after schema.ts was last generated, so
+ * hand-defined here rather than pulled from `components["schemas"]`.
+ * `avg_days` is RAW elapsed time (submission matched -> bound);
+ * `delay_excluded` is always false today — FR-4's broker/agent-side delay
+ * exclusion isn't computed anywhere (Package Assembly has no history of
+ * when a submission entered/left BLOCKED status to measure it from). */
+export interface TimeToPlacementOut {
+  carrier_name: string;
+  submissions_bound: number;
+  avg_days: number;
+  low_volume_flag: boolean;
+  delay_excluded: boolean;
+}
+
+export type PipelineReportPayload = components["schemas"]["PipelineReportPayload"] & {
+  time_to_placement: TimeToPlacementOut[];
+};
+
 // Qualified with the module path — every ES workflow router defines its own
 // `ReviewItemOut`/`RunRequest` classes (see marketMatching.ts's comment).
-export type ReviewItemOut =
-  components["schemas"]["verticals__es__workflows__pipeline_reporting__router__ReviewItemOut"];
-export type PipelineReportPayload = components["schemas"]["PipelineReportPayload"];
+// Overrides the generated `payload` field with the extended type above.
+export type ReviewItemOut = Omit<
+  components["schemas"]["verticals__es__workflows__pipeline_reporting__router__ReviewItemOut"],
+  "payload"
+> & { payload?: PipelineReportPayload | null };
 export type FunnelStageOut = components["schemas"]["FunnelStageOut"];
 export type CarrierPerformanceOut = components["schemas"]["CarrierPerformanceOut"];
 export type RemarketOutcomeOut = components["schemas"]["RemarketOutcomeOut"];

@@ -45,6 +45,62 @@ export function escalateEndorsement(itemId: string) {
   return api.post<ReviewItemOut>(`${BASE}/${itemId}/escalate`);
 }
 
+/** Additive alongside the fixture-scenario run above: starts a real
+ * pre-issuance pass from an actual, already-SENT Binder & Issuance bind's
+ * real terms. The change type/detail are broker-supplied — never inferred
+ * from raw email text (the retail agent's request email is free-flowing
+ * natural language with no reliable type signal a regex could extract
+ * without real risk of misclassifying a material change as routine). */
+export function runEndorsementFromBinder(
+  binderIssuanceItemId: string,
+  changeType: string,
+  changeDetail: string,
+) {
+  return api.post<ReviewItemOut>(`${BASE}/run-live-from-binder`, {
+    binder_issuance_item_id: binderIssuanceItemId,
+    change_type: changeType,
+    change_detail: changeDetail,
+  });
+}
+
+export interface LiveInboxMessage {
+  id: string;
+  subject: string;
+}
+
+/** Real Gmail messages that could be this request's issued endorsement —
+ * matched server-side by the request's own real named insured. Requires
+ * Gmail connected + backend CONNECTORS_MODE=live. */
+export function listLiveInbox(itemId: string) {
+  return api.get<LiveInboxMessage[]>(`${BASE}/live-inbox?item_id=${encodeURIComponent(itemId)}`);
+}
+
+/** Attaches a real carrier-issued-endorsement email — runs EP-05's
+ * item-level reconciliation for real. */
+export function attachLiveIssuedEndorsement(itemId: string, messageId: string) {
+  return api.post<ReviewItemOut>(`${BASE}/${itemId}/attach-live-issued-endorsement`, {
+    message_id: messageId,
+  });
+}
+
+export interface ChangeType {
+  value: string;
+  label: string;
+}
+
+/** Mirrors classification_engine.py's 7-value taxonomy — for the "Start
+ * endorsement request" type picker. Order roughly matches how commonly
+ * each type appears in real request patterns. */
+export const CHANGE_TYPES: ChangeType[] = [
+  { value: "additional_insured_endorsement", label: "Additional insured" },
+  { value: "limit_increase", label: "Limit increase" },
+  { value: "add_operations_class", label: "New operations class" },
+  { value: "add_location", label: "New location" },
+  { value: "employee_count_update", label: "Headcount / exposure update" },
+  { value: "address_correction", label: "Address correction" },
+  { value: "other", label: "Other" },
+];
+
 export interface FixtureScenario {
   ref: string;
   label: string;

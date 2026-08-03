@@ -53,9 +53,55 @@ export function runRenewalRemarketingLive(bindId: string) {
 
 /** "Approve light check" / "Approve full remarket" — both use this same
  * action. Genuinely re-invokes MarketMatchingPipeline; 409s if the decision
- * was NO_REMARKET. */
-export function initiateRemarket(itemId: string) {
-  return api.post<ReviewItemOut>(`${BASE}/${itemId}/initiate-remarket`);
+ * was NO_REMARKET. Pass a real messageId (from listLiveInbox) to re-invoke
+ * Market Matching against that real message instead of the Workflow_10
+ * fixture fallback. */
+export function initiateRemarket(itemId: string, messageId?: string) {
+  return api.post<ReviewItemOut>(`${BASE}/${itemId}/initiate-remarket`, {
+    message_id: messageId ?? null,
+  });
+}
+
+export interface LiveInboxMessage {
+  id: string;
+  subject: string;
+}
+
+/** Real Gmail messages for this item's real named insured — reused for
+ * both re-shop-candidate discovery (feeding initiateRemarket's optional
+ * messageId) and incumbent-offer discovery (feeding runLiveComparison). */
+export function listLiveInbox(itemId: string) {
+  return api.get<LiveInboxMessage[]>(`${BASE}/live-inbox?item_id=${encodeURIComponent(itemId)}`);
+}
+
+export interface LiveAlternativeQuote {
+  quote_comparison_item_id: string;
+  carrier_name: string;
+  premium: number | null;
+  limits: string | null;
+}
+
+/** Real, already-selected Quote Comparison items for this item's real
+ * named insured — the "alternative" side of the RR-06 comparison. */
+export function listLiveAlternativeQuotes(itemId: string) {
+  return api.get<LiveAlternativeQuote[]>(
+    `${BASE}/live-alternative-quotes?item_id=${encodeURIComponent(itemId)}`,
+  );
+}
+
+/** RR-06, live: a real incumbent-offer email against a real, already-
+ * selected Quote Comparison quote. Creates a NEW review item (the
+ * comparison stage), same as the fixture's own Scenario 05 being a
+ * separate scenario from Scenario 02, not an in-place update. */
+export function runLiveComparison(
+  itemId: string,
+  messageId: string,
+  quoteComparisonItemId: string,
+) {
+  return api.post<ReviewItemOut>(`${BASE}/${itemId}/run-live-comparison`, {
+    message_id: messageId,
+    quote_comparison_item_id: quoteComparisonItemId,
+  });
 }
 
 export function acceptIncumbent(itemId: string) {

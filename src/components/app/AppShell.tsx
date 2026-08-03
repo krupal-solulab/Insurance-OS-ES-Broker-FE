@@ -1,4 +1,4 @@
-import { Link, Outlet, useLocation, useRouter } from "@tanstack/react-router";
+import { Link, Outlet, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   Inbox,
@@ -28,6 +28,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { clearIdentity, getIdentity } from "@/lib/api/identity";
 
 const workflows = [
   { slug: "submission-matching", label: "Submission Market Matching", icon: Inbox, badge: "12" },
@@ -211,6 +212,20 @@ function TopBar({
   crumbs: { label: string; to?: string }[];
   onOpenCopilot: () => void;
 }) {
+  const navigate = useNavigate();
+  const identity = getIdentity();
+  const initials = (identity?.name ?? identity?.email ?? "?")
+    .split(/[.\s@]/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase())
+    .join("");
+
+  async function handleLogout() {
+    clearIdentity();
+    await navigate({ to: "/" });
+  }
+
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-border bg-background/85 px-6 backdrop-blur md:px-10">
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -246,14 +261,24 @@ function TopBar({
           <Bell className="h-4 w-4" />
           <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-accent" />
         </button>
-        <div className="flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-1 py-1 pr-3">
+        <div className="flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-1 py-1 pr-2">
           <div className="grid h-7 w-7 place-items-center rounded-full bg-foreground font-serif text-xs text-background">
-            SD
+            {initials || "?"}
           </div>
           <div className="text-xs leading-tight">
-            <div className="font-medium">Sam D.</div>
-            <div className="text-[10px] text-muted-foreground">Sr. Wholesale Broker</div>
+            <div className="font-medium">
+              {identity?.name ?? identity?.email ?? "Not logged in"}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {identity ? `${identity.role} · ${identity.email}` : "—"}
+            </div>
           </div>
+          <button
+            onClick={handleLogout}
+            className="ml-1 rounded-full px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            Log out
+          </button>
         </div>
       </div>
     </header>

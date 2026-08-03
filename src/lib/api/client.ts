@@ -4,11 +4,20 @@
  * directly.
  *
  * Attaches the Phase-0 header-stub auth (x-tenant-id / x-user-id / x-role —
- * see Backend-AI-OS/src/core/tenancy/dependencies.py, no login flow yet) and
- * normalizes FastAPI's `{"detail": ...}` error responses into a plain Error,
- * so existing `catch (err) { err instanceof Error ? err.message : ... }`
- * call sites (see AuthDialog.tsx / DemoPage.tsx) work unchanged.
+ * see Backend-AI-OS/src/core/tenancy/dependencies.py) and normalizes
+ * FastAPI's `{"detail": ...}` error responses into a plain Error, so
+ * existing `catch (err) { err instanceof Error ? err.message : ... }` call
+ * sites (see AuthDialog.tsx / DemoPage.tsx) work unchanged.
+ *
+ * Headers come from whoever is logged in this tab/window (see identity.ts,
+ * sessionStorage-backed) — read fresh on every call, not computed once at
+ * module load, so switching identity takes effect immediately without a
+ * reload. Falls back to the old build-time Vite env vars only if no one has
+ * logged in yet in this tab (e.g. mid-transition, or a route that isn't
+ * behind the login guard), so a request never goes out with zero identity
+ * headers.
  */
+import { getIdentity } from "./identity";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined;
 const DEMO_TENANT_ID = import.meta.env.VITE_DEMO_TENANT_ID as string | undefined;
@@ -16,10 +25,14 @@ const DEMO_USER_ID = import.meta.env.VITE_DEMO_USER_ID as string | undefined;
 const DEMO_ROLE = import.meta.env.VITE_DEMO_ROLE as string | undefined;
 
 function authHeaders(): Record<string, string> {
+  const identity = getIdentity();
   const headers: Record<string, string> = {};
-  if (DEMO_TENANT_ID) headers["x-tenant-id"] = DEMO_TENANT_ID;
-  if (DEMO_USER_ID) headers["x-user-id"] = DEMO_USER_ID;
-  if (DEMO_ROLE) headers["x-role"] = DEMO_ROLE;
+  const tenantId = identity?.tenantId ?? DEMO_TENANT_ID;
+  const userId = identity?.userId ?? DEMO_USER_ID;
+  const role = identity?.role ?? DEMO_ROLE;
+  if (tenantId) headers["x-tenant-id"] = tenantId;
+  if (userId) headers["x-user-id"] = userId;
+  if (role) headers["x-role"] = role;
   return headers;
 }
 

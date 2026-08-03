@@ -58,65 +58,63 @@ import {
   type PolicyDiscrepancyResolution,
 } from "@/lib/api/binderIssuance";
 import {
-  FIXTURE_SCENARIOS as ENDORSEMENT_FIXTURE_SCENARIOS,
+  attachLiveIssuedEndorsement,
+  CHANGE_TYPES,
   escalateEndorsement,
   getEndorsement,
   listEndorsement,
+  listLiveInbox as listEndorsementLiveInbox,
   resolveDiscrepancy as resolveEndorsementDiscrepancy,
-  runEndorsement,
+  runEndorsementFromBinder,
   sendEndorsement,
   type DiscrepancyResolution as EndorsementDiscrepancyResolution,
   type EndorsementRequestPayload,
-  type FixtureScenario as EndorsementFixtureScenario,
 } from "@/lib/api/endorsement";
 import {
-  FIXTURE_SCENARIOS as RENEWAL_FIXTURE_SCENARIOS,
   acceptIncumbent,
   escalateRenewalRemarketing,
   getRenewalRemarketing,
   initiateRemarket,
+  listLiveAlternativeQuotes,
   listLiveBinds,
+  listLiveInbox as listRenewalLiveInbox,
   listRenewalRemarketing,
-  runRenewalRemarketing,
+  runLiveComparison,
   runRenewalRemarketingLive,
   type ComparisonOutputOut,
-  type FixtureScenario as RenewalFixtureScenario,
   type RemarketDecisionPayload,
 } from "@/lib/api/renewalRemarketing";
 import {
-  FIXTURE_SCENARIOS as COMPLIANCE_FIXTURE_SCENARIOS,
   approveDiligentSearch,
   escalateDiligentSearch,
   getDiligentSearch,
   listDiligentSearch,
-  runDiligentSearch,
+  listLiveSubmissions,
+  runLiveDiligentSearch,
   type ComplianceRecordPayload,
-  type FixtureScenario as ComplianceFixtureScenario,
+  type LiveDeclinationInput,
+  type LiveStateInput,
+  type ReviewItemOut as DiligentSearchReviewItemOut,
   type StateDeterminationOut,
 } from "@/lib/api/diligentSearch";
 import {
-  FIXTURE_SCENARIOS as APPETITE_FIXTURE_SCENARIOS,
   approveCarrierAppetiteIntelligence,
   dismissCarrierAppetiteIntelligence,
   getCarrierAppetiteIntelligence,
   listCarrierAppetiteIntelligence,
-  runCarrierAppetiteIntelligence,
   runCarrierAppetiteIntelligenceLive,
   type CarrierAppetiteEvaluationPayload,
   type EvidenceItemOut,
-  type FixtureScenario as AppetiteFixtureScenario,
 } from "@/lib/api/carrierAppetiteIntelligence";
 import {
-  FIXTURE_SCENARIOS as REPORTING_FIXTURE_SCENARIOS,
   getPipelineReporting,
   listPipelineReporting,
-  runPipelineReporting,
   runPipelineReportingLive,
   type CarrierPerformanceOut,
-  type FixtureScenario as ReportingFixtureScenario,
   type FunnelStageOut,
   type PipelineReportPayload,
   type RemarketOutcomeOut,
+  type TimeToPlacementOut,
 } from "@/lib/api/pipelineReporting";
 import {
   ArrowRight,
@@ -3379,12 +3377,36 @@ function LiveBinderCard({
   payload: BindCoordinationPayload;
   onActed: (who: string, what: string, ctx: string) => void;
 }) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [resolvingSection, setResolvingSection] = useState<"confirmation" | "policy" | null>(null);
   const who = payload.named_insured ?? payload.submission_id ?? itemId;
   const unresolvedMaterial = payload.pre_bind_subjectivities.filter(
     (s) => s.status === "open" && s.materiality === "material",
   );
+
+  const [endorsementFormOpen, setEndorsementFormOpen] = useState(false);
+  const [changeType, setChangeType] = useState(CHANGE_TYPES[0].value);
+  const [changeDetail, setChangeDetail] = useState("");
+  const startEndorsementMutation = useMutation({
+    mutationFn: () => runEndorsementFromBinder(itemId, changeType, changeDetail),
+    onSuccess: (item) => {
+      onActed(
+        "You", "Started endorsement request",
+        `${who} → ${changeType.replaceAll("_", " ")}: ${changeDetail}`,
+      );
+      toast.success("Real endorsement request created — classified and drafted");
+      setEndorsementFormOpen(false);
+      setChangeDetail("");
+      navigate({
+        to: "/app/workflows/$slug",
+        params: { slug: "endorsement-processing" },
+        search: { endorsementItemId: item.id },
+      });
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to start endorsement request"),
+  });
 
   const confirmationMutation = useMutation({
     mutationFn: (resolution: DiscrepancyResolution) =>
@@ -3520,6 +3542,12 @@ function LiveBinderCard({
               {liveInboxKind === "policy" ? "Check for issued policy" : "Check for bind confirmation"}
             </Button>
           )}
+          {payload.bind_order_status === "SENT" && (
+            <Button variant="secondary" onClick={() => setEndorsementFormOpen((v) => !v)}>
+              <Sparkles className="h-3.5 w-3.5" />
+              Start endorsement request
+            </Button>
+          )}
           <Button variant="ghost" onClick={copyBindOrder}>
             <Copy className="h-3.5 w-3.5" />
             Copy bind order
@@ -3527,6 +3555,62 @@ function LiveBinderCard({
           <FoundationBadge kind="matching" />
         </div>
       </div>
+
+      {endorsementFormOpen && payload.bind_order_status === "SENT" && (
+        <div className="mt-4">
+          <Panel
+            title="Start a real endorsement request"
+            subtitle="POST /api/es/endorsement/run-live-from-binder — you pick the change type; nothing here is guessed from free-text email"
+            actions={
+              <Button variant="ghost" onClick={() => setEndorsementFormOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                  Change type
+                </label>
+                <select
+                  value={changeType}
+                  onChange={(e) => setChangeType(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
+                >
+                  {CHANGE_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                  Detail (the retail agent's actual request — include an effective date if given,
+                  e.g. "...effective 09/01/2027")
+                </label>
+                <textarea
+                  value={changeDetail}
+                  onChange={(e) => setChangeDetail(e.target.value)}
+                  rows={3}
+                  placeholder="Add Riverside Fabrication Co. as additional insured"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
+                />
+              </div>
+              <Button
+                variant="primary"
+                disabled={!changeDetail.trim() || startEndorsementMutation.isPending}
+                onClick={() => startEndorsementMutation.mutate()}
+              >
+                {startEndorsementMutation.isPending && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                )}
+                Create request
+              </Button>
+            </div>
+          </Panel>
+        </div>
+      )}
 
       {liveInboxOpen && liveInboxKind && (
         <div className="mt-4">
@@ -3692,10 +3776,10 @@ function LiveBinderCard({
    6. Endorsement / Mid-Term Change Processing
    ============================================================ */
 
-export function EndorsementProcessing() {
-  const queryClient = useQueryClient();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [newRequestOpen, setNewRequestOpen] = useState(false);
+export function EndorsementProcessing({ search = {} }: { search?: Record<string, unknown> }) {
+  const handoffItemId =
+    typeof search.endorsementItemId === "string" ? search.endorsementItemId : undefined;
+  const [selectedId, setSelectedId] = useState<string | null>(handoffItemId ?? null);
   const [log, setLog] = useState<LogEntry[]>([]);
 
   function appendLog(who: string, what: string, ctx: string) {
@@ -3712,13 +3796,23 @@ export function EndorsementProcessing() {
   }
 
   const listQuery = useQuery({ queryKey: ["endorsement", "list"], queryFn: listEndorsement });
-  const items = listQuery.data ?? [];
+  // Live is the only ingestion path shown here now — a request is only ever
+  // created via the "Start endorsement request" handoff from Binder &
+  // Issuance, so there's no standalone "new request" concept once live
+  // (same disable-not-delete treatment as every converted workflow). Real
+  // endorsement items' bind_id/submission_id is Binder & Issuance's own
+  // real (UUID-shaped) item id — fixture bind ids look like "BIND-6601",
+  // never UUID-shaped, so a UUID regex (not the 16-hex one used elsewhere)
+  // is the real-vs-fixture discriminator for this workflow specifically.
+  const items = (listQuery.data ?? []).filter((i) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i.submission_id ?? ""),
+  );
 
   useEffect(() => {
-    if (!selectedId && listQuery.data && listQuery.data.length > 0) {
-      setSelectedId(listQuery.data[0].id);
+    if (!selectedId && items.length > 0) {
+      setSelectedId(items[0].id);
     }
-  }, [listQuery.data, selectedId]);
+  }, [items, selectedId]);
 
   const detailQuery = useQuery({
     queryKey: ["endorsement", "detail", selectedId],
@@ -3727,64 +3821,13 @@ export function EndorsementProcessing() {
   });
   const payload = detailQuery.data?.payload ?? null;
 
-  const runMutation = useMutation({
-    mutationFn: (s: EndorsementFixtureScenario) => runEndorsement(s.ref),
-    onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["endorsement"] });
-      toast.success(`${s.label}: request processed`);
-      appendLog("AI (Matching/Ranking Core)", "Endorsement request processed", s.label);
-      setSelectedId(item.id);
-      setNewRequestOpen(false);
-    },
-    onError: (err: unknown, s) =>
-      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
-  });
-
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Workflow 06"
+        eyebrow="Workflow 06 · Live"
         title="Endorsement / Mid-Term Change Processing"
         description="AI classifies materiality, rechecks appetite against the carrier's current profile, and reconciles the issued endorsement item by item before any trigger fires — never assuming appetite fit from absent data, never trusting a carrier's issued document without reconciling it."
-        actions={
-          <Button variant="primary" onClick={() => setNewRequestOpen((v) => !v)}>
-            <Sparkles className="h-4 w-4" />
-            New endorsement request
-          </Button>
-        }
       />
-
-      {newRequestOpen && (
-        <div className="mb-5">
-          <Panel
-            title="Start a new endorsement request"
-            subtitle="Runs the real backend pipeline — POST /api/es/endorsement/run"
-            actions={
-              <Button variant="ghost" onClick={() => setNewRequestOpen(false)}>
-                Close
-              </Button>
-            }
-          >
-            <div className="flex flex-wrap gap-2">
-              {ENDORSEMENT_FIXTURE_SCENARIOS.map((s) => (
-                <Button
-                  key={s.ref}
-                  variant="secondary"
-                  disabled={runMutation.isPending}
-                  onClick={() => runMutation.mutate(s)}
-                >
-                  {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  {s.label}
-                </Button>
-              ))}
-            </div>
-          </Panel>
-        </div>
-      )}
 
       {listQuery.isLoading && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
@@ -3803,8 +3846,8 @@ export function EndorsementProcessing() {
           <Panel title="Open mid-term change requests" subtitle={`${items.length} generated`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No requests yet — click "New endorsement request" to run one of the 6 real
-                scenarios.
+                No live requests yet — select a SENT bind in Binder & Policy Issuance and
+                click "Start endorsement request" to create one.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -3969,6 +4012,28 @@ function LiveEndorsementCard({
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Escalate failed"),
   });
 
+  const [liveInboxOpen, setLiveInboxOpen] = useState(false);
+  const canCheckIssuedEndorsement = payload.carrier_response.reconciliation_status === "PENDING";
+  const liveInboxQuery = useQuery({
+    queryKey: ["endorsement", "live-inbox", itemId],
+    queryFn: () => listEndorsementLiveInbox(itemId),
+    enabled: liveInboxOpen,
+  });
+  const attachMutation = useMutation({
+    mutationFn: (messageId: string) => attachLiveIssuedEndorsement(itemId, messageId),
+    onSuccess: (item) => {
+      onActed(
+        "You", "Checked live inbox — attached the issued endorsement",
+        `${who} → status "${item.status}"`,
+      );
+      toast.success("Real item-level reconciliation run against the attached email");
+      queryClient.invalidateQueries({ queryKey: ["endorsement"] });
+      setLiveInboxOpen(false);
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to attach this message"),
+  });
+
   return (
     <Panel>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3984,8 +4049,75 @@ function LiveEndorsementCard({
             {payload.requested_change.detail}
           </div>
         </div>
-        <FoundationBadge kind="matching" />
+        <div className="flex items-center gap-2">
+          {canCheckIssuedEndorsement && (
+            <Button
+              variant="primary"
+              onClick={() => setLiveInboxOpen((v) => !v)}
+              title="Requires Gmail connected + backend CONNECTORS_MODE=live"
+            >
+              <Mail className="h-3.5 w-3.5" />
+              Check for issued endorsement
+            </Button>
+          )}
+          <FoundationBadge kind="matching" />
+        </div>
       </div>
+
+      {liveInboxOpen && canCheckIssuedEndorsement && (
+        <div className="mt-4">
+          <Panel
+            title="Check for a real issued endorsement"
+            subtitle="GET /api/es/endorsement/live-inbox — real Gmail via the connected Nango integration"
+            actions={
+              <Button variant="ghost" onClick={() => setLiveInboxOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            {liveInboxQuery.isLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading real inbox messages…
+              </div>
+            )}
+            {liveInboxQuery.isError && (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                {liveInboxQuery.error instanceof Error
+                  ? liveInboxQuery.error.message
+                  : "Failed to load real inbox messages."}
+              </div>
+            )}
+            {!liveInboxQuery.isLoading && !liveInboxQuery.isError && (
+              (liveInboxQuery.data ?? []).length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  No real messages found yet — connect Gmail in Settings, switch
+                  CONNECTORS_MODE=live, and make sure the carrier has replied to this
+                  request's named insured.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(liveInboxQuery.data ?? []).map((m) => (
+                    <Button
+                      key={m.id}
+                      variant="secondary"
+                      disabled={attachMutation.isPending}
+                      onClick={() => attachMutation.mutate(m.id)}
+                    >
+                      {attachMutation.isPending && attachMutation.variables === m.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Mail className="h-4 w-4" />
+                      )}
+                      {m.subject}
+                    </Button>
+                  ))}
+                </div>
+              )
+            )}
+          </Panel>
+        </div>
+      )}
 
       {appetite.applicable && (
         <div
@@ -4120,7 +4252,6 @@ function LiveEndorsementCard({
 export function RenewalRemarketing() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [newReviewOpen, setNewReviewOpen] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
 
   function appendLog(who: string, what: string, ctx: string) {
@@ -4140,13 +4271,22 @@ export function RenewalRemarketing() {
     queryKey: ["renewal-remarketing", "list"],
     queryFn: listRenewalRemarketing,
   });
-  const items = listQuery.data ?? [];
+  // Live is the only ingestion path shown here now — a review is only ever
+  // created via "Check live renewal" (or the live comparison-stage
+  // handoff), so there's no standalone "new review" concept once live
+  // (same disable-not-delete treatment as every converted workflow). Real
+  // bind_ids are UUIDs (Binder & Issuance's own review item id, now stable
+  // — see this session's bind_id fix); fixture bind ids look like
+  // "BIND-6604", never UUID-shaped.
+  const items = (listQuery.data ?? []).filter((i) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i.submission_id ?? ""),
+  );
 
   useEffect(() => {
-    if (!selectedId && listQuery.data && listQuery.data.length > 0) {
-      setSelectedId(listQuery.data[0].id);
+    if (!selectedId && items.length > 0) {
+      setSelectedId(items[0].id);
     }
-  }, [listQuery.data, selectedId]);
+  }, [items, selectedId]);
 
   const detailQuery = useQuery({
     queryKey: ["renewal-remarketing", "detail", selectedId],
@@ -4154,19 +4294,6 @@ export function RenewalRemarketing() {
     enabled: Boolean(selectedId),
   });
   const payload = detailQuery.data?.payload ?? null;
-
-  const runMutation = useMutation({
-    mutationFn: (s: RenewalFixtureScenario) => runRenewalRemarketing(s.ref),
-    onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["renewal-remarketing"] });
-      toast.success(`${s.label}: review generated`);
-      appendLog("AI (Matching/Ranking Core)", "Renewal review generated", s.label);
-      setSelectedId(item.id);
-      setNewReviewOpen(false);
-    },
-    onError: (err: unknown, s) =>
-      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
-  });
 
   const [liveBindsOpen, setLiveBindsOpen] = useState(false);
   const liveBindsQuery = useQuery({
@@ -4194,24 +4321,18 @@ export function RenewalRemarketing() {
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Workflow 07"
+        eyebrow="Workflow 07 · Live"
         title="Renewal Remarketing"
         description="Detects exposure and loss changes plus incumbent responsiveness on bound policies approaching renewal, and produces a graduated remarket recommendation."
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => setLiveBindsOpen((v) => !v)}
-              title="Builds a real renewal review from an actual Binder Issuance bind, correctly cross-checking Endorsement Processing history so an already-endorsed exposure change is never double-counted"
-            >
-              <Clock className="h-4 w-4" />
-              Check live renewal
-            </Button>
-            <Button variant="primary" onClick={() => setNewReviewOpen((v) => !v)}>
-              <Sparkles className="h-4 w-4" />
-              New renewal review
-            </Button>
-          </div>
+          <Button
+            variant="primary"
+            onClick={() => setLiveBindsOpen((v) => !v)}
+            title="Builds a real renewal review from an actual Binder Issuance bind, correctly cross-checking Endorsement Processing history so an already-endorsed exposure change is never double-counted"
+          >
+            <Clock className="h-4 w-4" />
+            Check live renewal
+          </Button>
         }
       />
 
@@ -4268,38 +4389,6 @@ export function RenewalRemarketing() {
         </div>
       )}
 
-      {newReviewOpen && (
-        <div className="mb-5">
-          <Panel
-            title="Start a new renewal review"
-            subtitle="Runs the real backend pipeline — POST /api/es/renewal-remarketing/run"
-            actions={
-              <Button variant="ghost" onClick={() => setNewReviewOpen(false)}>
-                Close
-              </Button>
-            }
-          >
-            <div className="flex flex-wrap gap-2">
-              {RENEWAL_FIXTURE_SCENARIOS.map((s) => (
-                <Button
-                  key={s.ref}
-                  variant="secondary"
-                  disabled={runMutation.isPending}
-                  onClick={() => runMutation.mutate(s)}
-                >
-                  {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  {s.label}
-                </Button>
-              ))}
-            </div>
-          </Panel>
-        </div>
-      )}
-
       {listQuery.isLoading && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading renewal reviews…
@@ -4317,7 +4406,8 @@ export function RenewalRemarketing() {
           <Panel title="Renewal pipeline" subtitle={`${items.length} generated`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No reviews yet — click "New renewal review" to run one of the 6 real scenarios.
+                No live reviews yet — click "Check live renewal" to build one from a real
+                Binder & Policy Issuance bind.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -4347,7 +4437,7 @@ export function RenewalRemarketing() {
             {!selectedId ? (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  Select a review from the list, or click "New renewal review."
+                  Select a review from the list, or click "Check live renewal."
                 </div>
               </Panel>
             ) : detailQuery.isLoading ? (
@@ -4464,17 +4554,26 @@ function LiveRenewalCard({
   const level = payload.trigger_decision.level;
   const tone = RENEWAL_TRIGGER_TONE[level] ?? "warn";
 
+  const [initiatePickerOpen, setInitiatePickerOpen] = useState(false);
+  const initiateInboxQuery = useQuery({
+    queryKey: ["renewal-remarketing", "live-inbox", itemId],
+    queryFn: () => listRenewalLiveInbox(itemId),
+    enabled: initiatePickerOpen,
+  });
   const initiateMutation = useMutation({
-    mutationFn: () => initiateRemarket(itemId),
+    mutationFn: (messageId?: string) => initiateRemarket(itemId, messageId),
     onMutate: () => setPendingAction("initiate"),
-    onSuccess: (item) => {
+    onSuccess: (item, messageId) => {
       onActed(
         "You",
-        `Approved — re-invoked Market Matching (real item created at /api/es/market-matching)`,
+        messageId
+          ? `Approved with a real message — re-invoked Market Matching against it (real item at /api/es/market-matching)`
+          : `Approved — re-invoked Market Matching (real item created at /api/es/market-matching)`,
         `${who} → status "${item.status}"`,
       );
       toast.success("Remarket initiated — a real Market Matching item was created");
       queryClient.invalidateQueries({ queryKey: ["renewal-remarketing"] });
+      setInitiatePickerOpen(false);
     },
     onError: (err: unknown) =>
       toast.error(
@@ -4505,6 +4604,36 @@ function LiveRenewalCard({
     },
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Escalate failed"),
     onSettled: () => setPendingAction(null),
+  });
+
+  const [comparisonPickerOpen, setComparisonPickerOpen] = useState(false);
+  const [comparisonMessageId, setComparisonMessageId] = useState<string | null>(null);
+  const [comparisonQuoteItemId, setComparisonQuoteItemId] = useState<string | null>(null);
+  const comparisonInboxQuery = useQuery({
+    queryKey: ["renewal-remarketing", "live-inbox", itemId],
+    queryFn: () => listRenewalLiveInbox(itemId),
+    enabled: comparisonPickerOpen,
+  });
+  const alternativeQuotesQuery = useQuery({
+    queryKey: ["renewal-remarketing", "live-alternative-quotes", itemId],
+    queryFn: () => listLiveAlternativeQuotes(itemId),
+    enabled: comparisonPickerOpen,
+  });
+  const runComparisonMutation = useMutation({
+    mutationFn: () => runLiveComparison(itemId, comparisonMessageId!, comparisonQuoteItemId!),
+    onSuccess: (item) => {
+      onActed(
+        "You", "Ran a real live comparison — incumbent offer vs. remarketed alternative",
+        `${who} → new comparison item "${item.id}"`,
+      );
+      toast.success("Real comparison created — select it from the list on the left");
+      queryClient.invalidateQueries({ queryKey: ["renewal-remarketing"] });
+      setComparisonPickerOpen(false);
+      setComparisonMessageId(null);
+      setComparisonQuoteItemId(null);
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to run live comparison"),
   });
 
   const comparison = payload.remarket_execution.comparison_output;
@@ -4591,6 +4720,144 @@ function LiveRenewalCard({
         </div>
       )}
 
+      {initiatePickerOpen && (
+        <div className="mt-4">
+          <Panel
+            title="Approve remarket — optionally against a real message"
+            subtitle="GET /api/es/renewal-remarketing/live-inbox — pick a real message, or skip to use fixture-matching against the named insured"
+            actions={
+              <Button variant="ghost" onClick={() => setInitiatePickerOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                disabled={initiateMutation.isPending}
+                onClick={() => initiateMutation.mutate(undefined)}
+              >
+                Skip — use fixture matching
+              </Button>
+            </div>
+            {initiateInboxQuery.isLoading && (
+              <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading real inbox messages…
+              </div>
+            )}
+            {initiateInboxQuery.isError && (
+              <div className="mt-3 flex items-center gap-2 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                {initiateInboxQuery.error instanceof Error
+                  ? initiateInboxQuery.error.message
+                  : "Failed to load real inbox messages."}
+              </div>
+            )}
+            {!initiateInboxQuery.isLoading &&
+              !initiateInboxQuery.isError &&
+              (initiateInboxQuery.data ?? []).length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(initiateInboxQuery.data ?? []).map((m) => (
+                    <Button
+                      key={m.id}
+                      variant="secondary"
+                      disabled={initiateMutation.isPending}
+                      onClick={() => initiateMutation.mutate(m.id)}
+                    >
+                      {initiateMutation.isPending && initiateMutation.variables === m.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Mail className="h-4 w-4" />
+                      )}
+                      {m.subject}
+                    </Button>
+                  ))}
+                </div>
+              )}
+          </Panel>
+        </div>
+      )}
+
+      {payload.remarket_execution.initiated && comparisonPickerOpen && (
+        <div className="mt-4">
+          <Panel
+            title="Run a real live comparison (RR-06)"
+            subtitle="Pick the incumbent's real renewal-offer email, then a real, already-selected Quote Comparison quote for the same account"
+            actions={
+              <Button variant="ghost" onClick={() => setComparisonPickerOpen(false)}>
+                Close
+              </Button>
+            }
+          >
+            <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+              1. Incumbent's real renewal-offer email
+            </div>
+            {comparisonInboxQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading real inbox messages…
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {(comparisonInboxQuery.data ?? []).map((m) => (
+                  <Button
+                    key={m.id}
+                    variant={comparisonMessageId === m.id ? "primary" : "secondary"}
+                    onClick={() => setComparisonMessageId(m.id)}
+                  >
+                    <Mail className="h-3.5 w-3.5" />
+                    {m.subject}
+                  </Button>
+                ))}
+                {!comparisonInboxQuery.isLoading && (comparisonInboxQuery.data ?? []).length === 0 && (
+                  <div className="text-sm text-muted-foreground">No real messages found yet.</div>
+                )}
+              </div>
+            )}
+
+            <div className="mb-1 mt-4 text-[11px] font-medium text-muted-foreground">
+              2. Real remarketed alternative (from Quote Comparison)
+            </div>
+            {alternativeQuotesQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading real quotes…
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {(alternativeQuotesQuery.data ?? []).map((q) => (
+                  <Button
+                    key={q.quote_comparison_item_id}
+                    variant={
+                      comparisonQuoteItemId === q.quote_comparison_item_id ? "primary" : "secondary"
+                    }
+                    onClick={() => setComparisonQuoteItemId(q.quote_comparison_item_id)}
+                  >
+                    {q.carrier_name}
+                    {q.premium != null ? ` — $${q.premium.toLocaleString()}` : ""}
+                  </Button>
+                ))}
+                {!alternativeQuotesQuery.isLoading &&
+                  (alternativeQuotesQuery.data ?? []).length === 0 && (
+                    <div className="text-sm text-muted-foreground">
+                      No selected Quote Comparison quote found yet for this account.
+                    </div>
+                  )}
+              </div>
+            )}
+
+            <div className="mt-4">
+              <Button
+                variant="primary"
+                disabled={!comparisonMessageId || !comparisonQuoteItemId || runComparisonMutation.isPending}
+                onClick={() => runComparisonMutation.mutate()}
+              >
+                {runComparisonMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Run comparison
+              </Button>
+            </div>
+          </Panel>
+        </div>
+      )}
+
       <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-3">
         {level === "NO_REMARKET" ? (
           <Button
@@ -4605,7 +4872,7 @@ function LiveRenewalCard({
           <Button
             variant={level === "URGENT_REMARKET" ? "danger" : "secondary"}
             disabled={pendingAction === "initiate"}
-            onClick={() => initiateMutation.mutate()}
+            onClick={() => setInitiatePickerOpen((v) => !v)}
           >
             {pendingAction === "initiate" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {level === "FULL_REMARKET" ? "Approve full remarket" : "Approve light check"}
@@ -4621,6 +4888,12 @@ function LiveRenewalCard({
             Escalate
           </Button>
         )}
+        {payload.remarket_execution.initiated && (
+          <Button variant="secondary" onClick={() => setComparisonPickerOpen((v) => !v)}>
+            <Sparkles className="h-3.5 w-3.5" />
+            Run live comparison
+          </Button>
+        )}
       </div>
     </Panel>
   );
@@ -4633,7 +4906,11 @@ function LiveRenewalCard({
 export function DiligentSearchCompliance() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [newCheckOpen, setNewCheckOpen] = useState(false);
+  const [liveSubmissionsOpen, setLiveSubmissionsOpen] = useState(false);
+  const [completingItemId, setCompletingItemId] = useState<string | null>(null);
+  const [redoInitialPayload, setRedoInitialPayload] = useState<ComplianceRecordPayload | null>(
+    null,
+  );
   const [log, setLog] = useState<LogEntry[]>([]);
 
   function appendLog(who: string, what: string, ctx: string) {
@@ -4668,29 +4945,26 @@ export function DiligentSearchCompliance() {
   });
   const payload = detailQuery.data?.payload ?? null;
 
-  const runMutation = useMutation({
-    mutationFn: (s: ComplianceFixtureScenario) => runDiligentSearch(s.ref),
-    onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["diligent-search"] });
-      toast.success(`${s.label}: determination generated`);
-      appendLog("AI (Matching/Ranking Core)", "Compliance determination generated", s.label);
-      setSelectedId(item.id);
-      setNewCheckOpen(false);
-    },
-    onError: (err: unknown, s) =>
-      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
+  const liveSubmissionsQuery = useQuery({
+    queryKey: ["diligent-search", "live-submissions"],
+    queryFn: listLiveSubmissions,
+    enabled: liveSubmissionsOpen,
   });
 
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Workflow 08"
+        eyebrow="Workflow 08 · Live"
         title="Diligent Search & Compliance Documentation"
         description="Per-state diligent-search requirements, declination evidence sufficiency, and compliant surplus-lines documentation — gated so nothing generates on incomplete evidence. Submissions enter this workflow from Submission Market Matching's MM-07 diligent-search flag — fully processed here, not just logged upstream."
         actions={
-          <Button variant="primary" onClick={() => setNewCheckOpen((v) => !v)}>
+          <Button
+            variant="primary"
+            onClick={() => setLiveSubmissionsOpen((v) => !v)}
+            title="No real per-state legal requirement data or declination evidence exists anywhere in the system yet — you enter the real facts you have; the strict sufficiency/generation gate below is unchanged"
+          >
             <FileSearch className="h-4 w-4" />
-            New compliance check
+            Check live submission
           </Button>
         }
       />
@@ -4707,35 +4981,81 @@ export function DiligentSearchCompliance() {
         </div>
       </div>
 
-      {newCheckOpen && (
+      {liveSubmissionsOpen && (
         <div className="mb-5">
           <Panel
-            title="Start a new compliance check"
-            subtitle="Runs the real backend pipeline — POST /api/es/diligent-search/run"
+            title="Real submissions awaiting a compliance search"
+            subtitle="GET /api/es/diligent-search/live-submissions — real, MM-07-seeded stubs from Submission Market Matching"
             actions={
-              <Button variant="ghost" onClick={() => setNewCheckOpen(false)}>
+              <Button variant="ghost" onClick={() => setLiveSubmissionsOpen(false)}>
                 Close
               </Button>
             }
           >
-            <div className="flex flex-wrap gap-2">
-              {COMPLIANCE_FIXTURE_SCENARIOS.map((s) => (
-                <Button
-                  key={s.ref}
-                  variant="secondary"
-                  disabled={runMutation.isPending}
-                  onClick={() => runMutation.mutate(s)}
-                >
-                  {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  {s.label}
-                </Button>
-              ))}
-            </div>
+            {liveSubmissionsQuery.isLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading real submissions…
+              </div>
+            )}
+            {liveSubmissionsQuery.isError && (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                {liveSubmissionsQuery.error instanceof Error
+                  ? liveSubmissionsQuery.error.message
+                  : "Failed to load real submissions."}
+              </div>
+            )}
+            {!liveSubmissionsQuery.isLoading &&
+              !liveSubmissionsQuery.isError &&
+              (liveSubmissionsQuery.data ?? []).length === 0 && (
+                <div className="text-sm text-muted-foreground">
+                  No real submission is waiting on a compliance search right now — one appears
+                  here automatically whenever Submission Market Matching finds zero carrier
+                  matches for a real submission (MM-07).
+                </div>
+              )}
+            {!liveSubmissionsQuery.isLoading && !liveSubmissionsQuery.isError && (
+              <div className="flex flex-wrap gap-2">
+                {(liveSubmissionsQuery.data ?? []).map((s) => (
+                  <Button
+                    key={s.item_id}
+                    variant="secondary"
+                    onClick={() => {
+                      setCompletingItemId(s.item_id);
+                      setLiveSubmissionsOpen(false);
+                    }}
+                  >
+                    <FileSearch className="h-4 w-4" />
+                    {s.submission_id ?? s.item_id}
+                  </Button>
+                ))}
+              </div>
+            )}
           </Panel>
+        </div>
+      )}
+
+      {completingItemId && (
+        <div className="mb-5">
+          <LiveComplianceSearchForm
+            itemId={completingItemId}
+            initial={redoInitialPayload ?? undefined}
+            onClose={() => {
+              setCompletingItemId(null);
+              setRedoInitialPayload(null);
+            }}
+            onDone={(item) => {
+              queryClient.invalidateQueries({ queryKey: ["diligent-search"] });
+              setRedoInitialPayload(null);
+              appendLog(
+                "You",
+                redoInitialPayload ? "Redid real per-state compliance data" : "Entered real per-state compliance data",
+                `${item.submission_id ?? item.id} → status "${item.status}"`,
+              );
+              setSelectedId(item.id);
+              setCompletingItemId(null);
+            }}
+          />
         </div>
       )}
 
@@ -4756,7 +5076,8 @@ export function DiligentSearchCompliance() {
           <Panel title="Diligent search queue" subtitle={`${items.length} generated`}>
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No records yet — click "New compliance check" to run one of the 4 real scenarios.
+                No records yet — click "Check live submission" to complete a real search for a
+                real Market Matching zero-match submission.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -4786,7 +5107,7 @@ export function DiligentSearchCompliance() {
             {!selectedId ? (
               <Panel>
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  Select a record from the list, or click "New compliance check."
+                  Select a record from the list, or click "Check live submission."
                 </div>
               </Panel>
             ) : detailQuery.isLoading ? (
@@ -4809,6 +5130,10 @@ export function DiligentSearchCompliance() {
                 itemId={detailQuery.data!.id}
                 payload={payload}
                 onActed={appendLog}
+                onRedo={() => {
+                  setRedoInitialPayload(payload);
+                  setCompletingItemId(detailQuery.data!.id);
+                }}
               />
             ) : (
               <Panel>
@@ -4951,10 +5276,12 @@ function LiveComplianceCard({
   itemId,
   payload,
   onActed,
+  onRedo,
 }: {
   itemId: string;
   payload: ComplianceRecordPayload;
   onActed: (who: string, what: string, ctx: string) => void;
+  onRedo: () => void;
 }) {
   const queryClient = useQueryClient();
   const [pendingAction, setPendingAction] = useState<"approve" | "escalate" | null>(null);
@@ -5044,6 +5371,275 @@ function LiveComplianceCard({
             Escalate ambiguous state to compliance
           </Button>
         )}
+        <Button
+          variant="secondary"
+          onClick={onRedo}
+          title="Re-opens the real per-state entry form, pre-filled with this record's current data, and re-runs the same determination against this SAME record"
+        >
+          <FileSearch className="h-3.5 w-3.5" />
+          Redo determination
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
+interface LiveStateFormRow {
+  state: string;
+  status: "exempt" | "required" | "pending";
+  export_list_note: string;
+  admitted_declinations_required: string;
+  declinations: LiveDeclinationInput[];
+}
+
+function emptyLiveStateRow(): LiveStateFormRow {
+  return {
+    state: "",
+    status: "pending",
+    export_list_note: "",
+    admitted_declinations_required: "",
+    declinations: [],
+  };
+}
+
+function stateRowsFromPayload(payload: ComplianceRecordPayload): LiveStateFormRow[] {
+  if (payload.state_determinations.length === 0) return [emptyLiveStateRow()];
+  return payload.state_determinations.map((s) => ({
+    state: s.state,
+    status:
+      s.requirement_status === "EXEMPT"
+        ? "exempt"
+        : s.requirement_status === "REQUIRED"
+          ? "required"
+          : "pending",
+    export_list_note: s.exemption_basis ?? "",
+    admitted_declinations_required:
+      s.declinations_required != null ? String(s.declinations_required) : "",
+    declinations: s.declinations_on_file.map((d) => ({
+      carrier: d.carrier,
+      date: d.date ?? null,
+      written_evidence: d.written_evidence,
+    })),
+  }));
+}
+
+function LiveComplianceSearchForm({
+  itemId,
+  initial,
+  onClose,
+  onDone,
+}: {
+  itemId: string;
+  initial?: ComplianceRecordPayload;
+  onClose: () => void;
+  onDone: (item: DiligentSearchReviewItemOut) => void;
+}) {
+  const [namedInsured, setNamedInsured] = useState(initial?.named_insured ?? "");
+  const [states, setStates] = useState<LiveStateFormRow[]>(
+    initial ? stateRowsFromPayload(initial) : [emptyLiveStateRow()],
+  );
+
+  const runMutation = useMutation({
+    mutationFn: () => {
+      const body: { named_insured: string | null; states: LiveStateInput[] } = {
+        named_insured: namedInsured.trim() || null,
+        states: states
+          .filter((s) => s.state.trim())
+          .map((s) => ({
+            state: s.state.trim(),
+            status: s.status,
+            export_list_note: s.status === "exempt" ? s.export_list_note.trim() || null : null,
+            admitted_declinations_required:
+              s.status === "required" && s.admitted_declinations_required
+                ? Number(s.admitted_declinations_required)
+                : null,
+            declinations: s.status === "required" ? s.declinations : [],
+          })),
+      };
+      return runLiveDiligentSearch(itemId, body);
+    },
+    onSuccess: (item) => {
+      toast.success("Real compliance determination generated");
+      onDone(item);
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to run determination"),
+  });
+
+  function updateState(i: number, patch: Partial<LiveStateFormRow>) {
+    setStates((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+  }
+  function addDeclination(i: number) {
+    setStates((prev) =>
+      prev.map((s, idx) =>
+        idx === i
+          ? {
+              ...s,
+              declinations: [
+                ...s.declinations,
+                { carrier: "", date: "", written_evidence: false },
+              ],
+            }
+          : s,
+      ),
+    );
+  }
+  function updateDeclination(i: number, j: number, patch: Partial<LiveDeclinationInput>) {
+    setStates((prev) =>
+      prev.map((s, idx) =>
+        idx === i
+          ? {
+              ...s,
+              declinations: s.declinations.map((d, dj) => (dj === j ? { ...d, ...patch } : d)),
+            }
+          : s,
+      ),
+    );
+  }
+  function removeDeclination(i: number, j: number) {
+    setStates((prev) =>
+      prev.map((s, idx) =>
+        idx === i ? { ...s, declinations: s.declinations.filter((_, dj) => dj !== j) } : s,
+      ),
+    );
+  }
+  function removeState(i: number) {
+    setStates((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  const namedStates = states.filter((s) => s.state.trim());
+  // A "Required" state with no declination count entered would otherwise
+  // silently be treated as "0 required" server-side (trivially satisfied
+  // by anything) — this workflow's zero-tolerance gate means that must
+  // never happen quietly, so it's blocked here at the form level too.
+  const missingRequiredCount = namedStates.some(
+    (s) => s.status === "required" && !s.admitted_declinations_required.trim(),
+  );
+  const canSubmit = namedStates.length > 0 && !missingRequiredCount && !runMutation.isPending;
+
+  return (
+    <Panel
+      title={initial ? "Redo real per-state compliance data" : "Enter real per-state compliance data"}
+      subtitle="POST /api/es/diligent-search/{item_id}/run-live — you supply the real facts you have; the strict sufficiency/generation gate is unchanged"
+      actions={
+        <Button variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      <label className="block text-[11px] font-medium text-muted-foreground">
+        Named insured
+      </label>
+      <input
+        className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+        value={namedInsured}
+        onChange={(e) => setNamedInsured(e.target.value)}
+        placeholder="Real named insured for this submission"
+      />
+
+      <div className="mt-4 space-y-3">
+        {states.map((s, i) => (
+          <div key={i} className="rounded-lg border border-border p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                className="w-24 rounded-md border border-border bg-background px-2 py-1 text-sm"
+                value={s.state}
+                onChange={(e) => updateState(i, { state: e.target.value })}
+                placeholder="State"
+              />
+              <select
+                className="rounded-md border border-border bg-background px-2 py-1 text-sm"
+                value={s.status}
+                onChange={(e) =>
+                  updateState(i, { status: e.target.value as LiveStateFormRow["status"] })
+                }
+              >
+                <option value="pending">Not yet determined</option>
+                <option value="exempt">Export exempt</option>
+                <option value="required">Required</option>
+              </select>
+              {states.length > 1 && (
+                <Button variant="ghost" onClick={() => removeState(i)}>
+                  <XCircle className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+
+            {s.status === "exempt" && (
+              <input
+                className="mt-2 w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+                value={s.export_list_note}
+                onChange={(e) => updateState(i, { export_list_note: e.target.value })}
+                placeholder='Exemption basis (e.g. "On the export list, unconditional")'
+              />
+            )}
+
+            {s.status === "required" && (
+              <>
+                <input
+                  type="number"
+                  min={0}
+                  className="mt-2 w-48 rounded-md border border-border bg-background px-2 py-1 text-sm"
+                  value={s.admitted_declinations_required}
+                  onChange={(e) =>
+                    updateState(i, { admitted_declinations_required: e.target.value })
+                  }
+                  placeholder="Declinations required (required)"
+                />
+                {!s.admitted_declinations_required.trim() && (
+                  <div className="mt-1 text-[10px] text-warn">
+                    Enter how many declinations this state actually requires — leaving this blank
+                    is treated as "not yet determined," never as zero.
+                  </div>
+                )}
+                <div className="mt-2 space-y-1.5">
+                  {s.declinations.map((d, j) => (
+                    <div key={j} className="flex flex-wrap items-center gap-1.5">
+                      <input
+                        className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-[12px]"
+                        value={d.carrier}
+                        onChange={(e) => updateDeclination(i, j, { carrier: e.target.value })}
+                        placeholder="Carrier"
+                      />
+                      <input
+                        className="w-28 rounded-md border border-border bg-background px-2 py-1 text-[12px]"
+                        value={d.date ?? ""}
+                        onChange={(e) => updateDeclination(i, j, { date: e.target.value })}
+                        placeholder="Date"
+                      />
+                      <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={d.written_evidence}
+                          onChange={(e) =>
+                            updateDeclination(i, j, { written_evidence: e.target.checked })
+                          }
+                        />
+                        Written
+                      </label>
+                      <Button variant="ghost" onClick={() => removeDeclination(i, j)}>
+                        <XCircle className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button variant="secondary" onClick={() => addDeclination(i)}>
+                    + Add declination
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+        <Button variant="secondary" onClick={() => setStates((prev) => [...prev, emptyLiveStateRow()])}>
+          + Add state
+        </Button>
+        <Button variant="primary" disabled={!canSubmit} onClick={() => runMutation.mutate()}>
+          {runMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Run determination
+        </Button>
       </div>
     </Panel>
   );
@@ -5057,13 +5653,16 @@ export function CarrierAppetiteIntelligence() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   const listQuery = useQuery({
     queryKey: ["carrier-appetite-intelligence", "list"],
     queryFn: listCarrierAppetiteIntelligence,
   });
-  const items = listQuery.data ?? [];
+  // Real live evaluations always carry class_code "ALL" (Quote Comparison's
+  // real payload has no class_code field at all — live_signal_builder.py
+  // aggregates per-carrier across all classes); fixture-scenario items
+  // always carry a real class name instead, never "ALL".
+  const items = (listQuery.data ?? []).filter((i) => i.payload?.class_code === "ALL");
   const suppressedCount = items.filter((i) => i.payload?.status === "SUPPRESSED").length;
 
   const detailQuery = useQuery({
@@ -5084,23 +5683,6 @@ export function CarrierAppetiteIntelligence() {
       ...prev,
     ]);
   }
-
-  const runMutation = useMutation({
-    mutationFn: (s: AppetiteFixtureScenario) => runCarrierAppetiteIntelligence(s.ref),
-    onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["carrier-appetite-intelligence"] });
-      appendLog(
-        "You",
-        `Ran appetite check — ${s.label}`,
-        `→ ${item.payload?.pattern_type.replace(/_/g, " ") ?? "evaluated"}`,
-      );
-      toast.success(`${s.label}: evaluation complete`);
-      setSelectedId(item.id);
-      setPickerOpen(false);
-    },
-    onError: (err: unknown, s) =>
-      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
-  });
 
   const runLiveMutation = useMutation({
     mutationFn: runCarrierAppetiteIntelligenceLive,
@@ -5125,29 +5707,23 @@ export function CarrierAppetiteIntelligence() {
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Workflow 09"
+        eyebrow="Workflow 09 · Live"
         title="Carrier Appetite Intelligence Tracking"
-        description="Aggregates signals already logged by Quote Comparison and Renewal Remarketing, and surfaces well-evidenced appetite-shift suggestions for human review."
+        description="Aggregates real declination-consistency signals already logged by Quote Comparison, and surfaces well-evidenced appetite-shift suggestions for human review."
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              disabled={runLiveMutation.isPending}
-              onClick={() => runLiveMutation.mutate()}
-              title="Evaluates every carrier with a real declination signal already logged by Quote Comparison for this tenant"
-            >
-              {runLiveMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Radar className="h-4 w-4" />
-              )}
-              Check live signals
-            </Button>
-            <Button variant="primary" onClick={() => setPickerOpen((v) => !v)}>
-              <Sparkles className="h-4 w-4" />
-              New appetite check
-            </Button>
-          </div>
+          <Button
+            variant="primary"
+            disabled={runLiveMutation.isPending}
+            onClick={() => runLiveMutation.mutate()}
+            title="Evaluates every carrier with a real declination signal already logged by Quote Comparison for this tenant"
+          >
+            {runLiveMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Radar className="h-4 w-4" />
+            )}
+            Check live signals
+          </Button>
         }
       />
 
@@ -5158,39 +5734,20 @@ export function CarrierAppetiteIntelligence() {
           <div className="text-[11px] text-muted-foreground">
             This workflow only aggregates, suggests, and auto-updates exactly two metadata fields —
             appetite confidence and last-signal date. Treat that as binding, not a starting point to
-            expand from. Aggregates signals already logged by Quote Comparison (QC-03) and Renewal
-            Remarketing (RR-08) — it never collects new signals of its own.
+            expand from. Aggregates real declination-consistency signals already logged by Quote
+            Comparison (QC-03) — it never collects new signals of its own. Renewal Remarketing's
+            RR-08 was checked too, but its real payload carries no reason/outcome/class_code fields
+            to aggregate, so it's honestly excluded here rather than forced into a shape it doesn't
+            have.
           </div>
         </div>
       </div>
-
-      {pickerOpen && (
-        <Panel title="Run an appetite check" subtitle="Real Workflow_18 fixture scenarios">
-          <div className="flex flex-wrap gap-2">
-            {APPETITE_FIXTURE_SCENARIOS.map((s) => (
-              <Button
-                key={s.ref}
-                variant="secondary"
-                disabled={runMutation.isPending}
-                onClick={() => runMutation.mutate(s)}
-              >
-                {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                {s.label}
-              </Button>
-            ))}
-          </div>
-        </Panel>
-      )}
 
       <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         <GovKpi
           label="Evaluations run"
           value={String(items.length)}
-          sub="From Quote Comparison + Remarketing signals"
+          sub="From real Quote Comparison signals"
         />
         <GovKpi
           label="Suppressed"
@@ -5238,7 +5795,7 @@ export function CarrierAppetiteIntelligence() {
           >
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No evaluations yet — run a scenario above.
+                No evaluations yet — click "Check live signals" above.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -5485,13 +6042,15 @@ function LiveSignalCard({
 export function PipelineCarrierReporting() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   const listQuery = useQuery({
     queryKey: ["pipeline-reporting", "list"],
     queryFn: listPipelineReporting,
   });
-  const items = listQuery.data ?? [];
+  // Real live reports always set period to this exact literal
+  // (service.py's run_live); fixture scenarios use a period like "Q3 2027",
+  // never this string.
+  const items = (listQuery.data ?? []).filter((i) => i.payload?.period === "Live (current data)");
   const gapCount = items.filter((i) => i.payload?.data_completeness.status === "PARTIAL").length;
   const lowVolumeCarrierCount = items.reduce(
     (sum, i) => sum + (i.payload?.carrier_performance.filter((c) => c.low_volume_flag).length ?? 0),
@@ -5504,25 +6063,12 @@ export function PipelineCarrierReporting() {
     enabled: Boolean(selectedId),
   });
 
-  const runMutation = useMutation({
-    mutationFn: (s: ReportingFixtureScenario) => runPipelineReporting(s.ref),
-    onSuccess: (item, s) => {
-      queryClient.invalidateQueries({ queryKey: ["pipeline-reporting"] });
-      toast.success(`${s.label}: report generated`);
-      setSelectedId(item.id);
-      setPickerOpen(false);
-    },
-    onError: (err: unknown, s) =>
-      toast.error(err instanceof Error ? err.message : `Failed to run "${s.label}"`),
-  });
-
   const runLiveMutation = useMutation({
     mutationFn: runPipelineReportingLive,
     onSuccess: (item) => {
       queryClient.invalidateQueries({ queryKey: ["pipeline-reporting"] });
       toast.success("Live report generated from real cross-workflow data");
       setSelectedId(item.id);
-      setPickerOpen(false);
     },
     onError: (err: unknown) =>
       toast.error(err instanceof Error ? err.message : "Failed to generate live report"),
@@ -5531,29 +6077,23 @@ export function PipelineCarrierReporting() {
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Workflow 10"
+        eyebrow="Workflow 10 · Live"
         title="Pipeline & Carrier Performance Reporting"
         description="Aggregates logs from all prior E&S workflows into a funnel view, carrier hit-rate comparison, and remarketing value report — with mandatory low-volume annotation and data-gap flagging."
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              disabled={runLiveMutation.isPending}
-              onClick={() => runLiveMutation.mutate()}
-              title="Builds one report from real Market Matching / Package Assembly / Quote Comparison / Binder Issuance / Renewal Remarketing data for this tenant"
-            >
-              {runLiveMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Clock className="h-4 w-4" />
-              )}
-              Generate live report
-            </Button>
-            <Button variant="primary" onClick={() => setPickerOpen((v) => !v)}>
-              <Sparkles className="h-4 w-4" />
-              New report
-            </Button>
-          </div>
+          <Button
+            variant="primary"
+            disabled={runLiveMutation.isPending}
+            onClick={() => runLiveMutation.mutate()}
+            title="Builds one report from real Market Matching / Package Assembly / Quote Comparison / Binder Issuance / Renewal Remarketing data for this tenant"
+          >
+            {runLiveMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Clock className="h-4 w-4" />
+            )}
+            Generate live report
+          </Button>
         }
       />
 
@@ -5570,33 +6110,11 @@ export function PipelineCarrierReporting() {
         </div>
       </div>
 
-      {pickerOpen && (
-        <Panel title="Generate a report" subtitle="Real Workflow_19 fixture scenarios">
-          <div className="flex flex-wrap gap-2">
-            {REPORTING_FIXTURE_SCENARIOS.map((s) => (
-              <Button
-                key={s.ref}
-                variant="secondary"
-                disabled={runMutation.isPending}
-                onClick={() => runMutation.mutate(s)}
-              >
-                {runMutation.isPending && runMutation.variables?.ref === s.ref ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                {s.label}
-              </Button>
-            ))}
-          </div>
-        </Panel>
-      )}
-
       <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         <GovKpi
           label="Reports generated"
           value={String(items.length)}
-          sub="Across all fixture scenarios"
+          sub="Real cross-workflow reports"
         />
         <GovKpi
           label="Reports with a data gap"
@@ -5636,7 +6154,7 @@ export function PipelineCarrierReporting() {
           >
             {items.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                No reports yet — run a scenario above.
+                No reports yet — click "Generate live report" above.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -5814,6 +6332,44 @@ function LiveReportCard({ payload }: { payload: PipelineReportPayload }) {
                   <td className="py-2 text-right font-mono">{c.quote_rate}%</td>
                   <td className="py-2 text-right font-mono">{c.bind_rate}%</td>
                   <td className="py-2 text-right font-mono">{c.overall_hit_rate}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {payload.time_to_placement.length > 0 && (
+        <div className="mt-5">
+          <div className="mb-2 text-xs font-medium">Time to placement — sorted by volume</div>
+          <div className="mb-2 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/5 p-2 text-[11px] text-foreground">
+            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warn" />
+            <span>
+              Raw elapsed time (submission matched → bound). Broker/agent-side delay is NOT
+              excluded (FR-4) — Package Assembly has no record of when a submission entered or
+              left BLOCKED status, only its current status, so there's no real data to compute
+              that exclusion from.
+            </span>
+          </div>
+          <table className="w-full text-sm">
+            <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="py-1.5 text-left">Carrier</th>
+                <th className="py-1.5 text-right">Submissions bound</th>
+                <th className="py-1.5 text-right">Avg. elapsed days</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {payload.time_to_placement.map((p: TimeToPlacementOut) => (
+                <tr key={p.carrier_name}>
+                  <td className="py-2 font-medium">
+                    <div className="flex items-center gap-2">
+                      {p.carrier_name}
+                      {p.low_volume_flag && <Chip tone="warn">Low volume</Chip>}
+                    </div>
+                  </td>
+                  <td className="py-2 text-right tabular-nums">{p.submissions_bound}</td>
+                  <td className="py-2 text-right font-mono">{p.avg_days}</td>
                 </tr>
               ))}
             </tbody>
