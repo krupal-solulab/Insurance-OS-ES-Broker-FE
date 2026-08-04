@@ -2350,6 +2350,10 @@ export interface components {
             detail: string;
             /** Requested Effective Date */
             requested_effective_date?: string | null;
+            /** Percent Change */
+            percent_change?: number | null;
+            /** Absolute Change */
+            absolute_change?: number | null;
         };
         /** ResolveDiscrepancyRequest */
         ResolveDiscrepancyRequest: {

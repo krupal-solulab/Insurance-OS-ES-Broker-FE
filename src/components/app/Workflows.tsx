@@ -1967,7 +1967,7 @@ export function RetailAgentCopilot({ search = {} }: { search?: Record<string, un
   return (
     <div className="mx-auto max-w-[1500px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Workflow 03"
+        eyebrow="Workflow 03 · Live"
         title="Retail Agent Communication Copilot"
         description="AI drafts every retail-agent-facing email — status update, missing-info request, no-market notice, quote summary — you approve before it sends."
         actions={
@@ -3556,6 +3556,55 @@ function LiveBinderCard({
         </div>
       </div>
 
+      {payload.carrier_confirmation.binder_number && (
+        <div className="mt-4 rounded-lg border border-success/30 bg-success/5 p-3 text-[12px]">
+          <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+            Carrier confirmation received
+          </div>
+          <div className="grid gap-1 text-muted-foreground sm:grid-cols-2">
+            <span>
+              Binder number: <span className="font-mono text-foreground">
+                {payload.carrier_confirmation.binder_number}
+              </span>
+            </span>
+            {payload.carrier_confirmation.confirmed_terms && (
+              <>
+                <span>
+                  Confirmed premium:{" "}
+                  {payload.carrier_confirmation.confirmed_terms.premium != null
+                    ? `$${payload.carrier_confirmation.confirmed_terms.premium.toLocaleString()}`
+                    : "Not stated"}
+                </span>
+                <span>
+                  Confirmed limits: {payload.carrier_confirmation.confirmed_terms.limits ?? "Not stated"}
+                </span>
+                <span>
+                  Confirmed deductible:{" "}
+                  {payload.carrier_confirmation.confirmed_terms.deductible_all_perils != null
+                    ? `$${payload.carrier_confirmation.confirmed_terms.deductible_all_perils.toLocaleString()}`
+                    : "Not stated"}
+                </span>
+                <span>
+                  Confirmed effective date:{" "}
+                  {payload.carrier_confirmation.confirmed_terms.effective_date ?? "Not stated"}
+                </span>
+              </>
+            )}
+            {payload.policy_issuance.carrier_stated_timeline_days != null && (
+              <span>
+                Carrier-stated issuance timeline: {payload.policy_issuance.carrier_stated_timeline_days}{" "}
+                day{payload.policy_issuance.carrier_stated_timeline_days === 1 ? "" : "s"}
+                {payload.policy_issuance.timeline_is_assumed_default ? " (assumed default)" : ""}
+              </span>
+            )}
+            {payload.policy_issuance.expected_by_date && (
+              <span>Policy documents expected by: {payload.policy_issuance.expected_by_date}</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {endorsementFormOpen && payload.bind_order_status === "SENT" && (
         <div className="mt-4">
           <Panel
@@ -4047,6 +4096,21 @@ function LiveEndorsementCard({
           <div className="mt-1 text-[11px] text-muted-foreground">
             {payload.carrier_name} · {payload.requested_change.type}:{" "}
             {payload.requested_change.detail}
+            {(payload.requested_change.percent_change != null ||
+              payload.requested_change.absolute_change != null) && (
+              <span className="font-medium text-foreground">
+                {" "}
+                (
+                {payload.requested_change.percent_change != null &&
+                  `${payload.requested_change.percent_change > 0 ? "+" : ""}${payload.requested_change.percent_change.toFixed(0)}% headcount`}
+                {payload.requested_change.absolute_change != null &&
+                  payload.requested_change.percent_change != null &&
+                  ", "}
+                {payload.requested_change.absolute_change != null &&
+                  `${payload.requested_change.absolute_change > 0 ? "+" : ""}${payload.requested_change.absolute_change.toFixed(0)} employees`}
+                )
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
