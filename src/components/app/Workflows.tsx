@@ -45,6 +45,7 @@ import {
 import {
   attachLiveConfirmation,
   attachLiveIssuedPolicy,
+  clearSubjectivity,
   escalateBinderIssuance,
   getBinderIssuance,
   listBinderIssuance,
@@ -3454,6 +3455,28 @@ function LiveBinderCard({
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Escalate failed"),
   });
 
+  const [clearingDescription, setClearingDescription] = useState<string | null>(null);
+  const clearSubjectivityMutation = useMutation({
+    mutationFn: (description: string) => clearSubjectivity(itemId, description),
+    onMutate: (description: string) => setClearingDescription(description),
+    onSuccess: (item, description) => {
+      onActed(
+        "You",
+        `Cleared subjectivity — "${description}"`,
+        `${who} → status "${item.status}"`,
+      );
+      toast.success(
+        item.payload?.bind_order_status === "BLOCKED"
+          ? "Cleared — still blocked on another unresolved item"
+          : "Cleared — bind order unblocked",
+      );
+      queryClient.invalidateQueries({ queryKey: ["binder-issuance"] });
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : "Failed to clear this subjectivity"),
+    onSettled: () => setClearingDescription(null),
+  });
+
   // Which real document this bind needs checked for next — READY means no
   // confirmation exists yet (BI-03); once SENT and confirmation-clean, the
   // next real thing to check for is the issued policy (BI-05). Neither
@@ -3721,12 +3744,33 @@ function LiveBinderCard({
       )}
 
       {unresolvedMaterial.length > 0 && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <div className="text-[12px] text-foreground">
-            <b>Blocked — unresolved material subjectivity:</b>{" "}
-            {unresolvedMaterial.map((s) => s.description).join("; ")}
+        <div className="mt-4 rounded-lg border-2 border-destructive/40 bg-destructive/5 p-3">
+          <div className="flex items-start gap-2 text-[12px] text-foreground">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <b>Blocked — unresolved material subjectivity</b>
           </div>
+          <ul className="mt-2 space-y-2">
+            {unresolvedMaterial.map((s) => (
+              <li
+                key={s.description}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/20 bg-background p-2 text-[12px]"
+              >
+                <span>{s.description}</span>
+                <Button
+                  variant="secondary"
+                  className="!py-1 !text-xs"
+                  disabled={clearSubjectivityMutation.isPending}
+                  onClick={() => clearSubjectivityMutation.mutate(s.description)}
+                  title="Confirm the underlying condition was actually satisfied — never marks it resolved automatically"
+                >
+                  {clearingDescription === s.description && (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  )}
+                  Mark resolved
+                </Button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

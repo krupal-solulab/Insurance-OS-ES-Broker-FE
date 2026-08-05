@@ -89,6 +89,16 @@ export function attachLiveIssuedPolicy(itemId: string, messageId: string) {
   });
 }
 
+/** Marks a real pre-bind subjectivity resolved (broker confirms the
+ * underlying condition was actually satisfied) and re-runs BI-02's blocking
+ * check — the only way to unblock a bind stuck on a material, unresolved
+ * subjectivity. Matched by exact description text. */
+export function clearSubjectivity(itemId: string, description: string) {
+  return api.post<ReviewItemOut>(`${BASE}/${itemId}/clear-subjectivity`, {
+    description,
+  });
+}
+
 export interface FixtureScenario {
   ref: string;
   label: string;
