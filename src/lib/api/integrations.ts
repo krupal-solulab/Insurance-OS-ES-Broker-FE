@@ -39,7 +39,8 @@ export function disconnectIntegration(provider: string) {
 }
 
 export const GOOGLE_MAIL_PROVIDER = "google-mail";
-// Connect/disconnect only for now — no read/write wiring exists yet for
-// either of these two (see core/config.py's nango_integration_sheet/drive).
+// Connect/disconnect only for now — no read/write wiring exists yet for any
+// of these three (see core/config.py's nango_integration_sheet/drive/calendar).
 export const GOOGLE_SHEET_PROVIDER = "google-sheet";
 export const GOOGLE_DRIVE_PROVIDER = "google-drive";
+export const GOOGLE_CALENDAR_PROVIDER = "google-calendar";
