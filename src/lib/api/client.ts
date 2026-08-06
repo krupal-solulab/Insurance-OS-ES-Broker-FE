@@ -61,6 +61,12 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
+      // Free ngrok tunnels serve an HTML "are you a human?" interstitial
+      // (no CORS headers at all) to plain browser-looking requests unless
+      // this is set — without it, some calls silently come back as a
+      // browser-reported CORS error even though the real backend never
+      // saw the request. Harmless/no-op against a non-ngrok backend.
+      "ngrok-skip-browser-warning": "true",
       ...authHeaders(),
       ...(init.body ? { "Content-Type": "application/json" } : {}),
       ...init.headers,
