@@ -12,6 +12,7 @@ import {
   Loader2,
   FileSpreadsheet,
   HardDrive,
+  Calendar,
   type LucideIcon,
 } from "lucide-react";
 import { PageHeader } from "./AppShell";
@@ -31,6 +32,7 @@ import {
   GOOGLE_MAIL_PROVIDER,
   GOOGLE_SHEET_PROVIDER,
   GOOGLE_DRIVE_PROVIDER,
+  GOOGLE_CALENDAR_PROVIDER,
   confirmConnection,
   createConnectSession,
   disconnectIntegration,
@@ -898,6 +900,12 @@ const INTEGRATIONS: IntegrationDef[] = [
     label: "Google Drive",
     description: "Connect/disconnect only for now — no data is read or written yet",
     icon: HardDrive,
+  },
+  {
+    provider: GOOGLE_CALENDAR_PROVIDER,
+    label: "Google Calendar",
+    description: "Connect/disconnect only for now — no data is read or written yet",
+    icon: Calendar,
   },
 ];
 
