@@ -10,6 +10,9 @@ import {
   Download,
   Mail,
   Loader2,
+  FileSpreadsheet,
+  HardDrive,
+  type LucideIcon,
 } from "lucide-react";
 import { PageHeader } from "./AppShell";
 import { Panel, Chip, Tabs, Button } from "./Workflows";
@@ -26,6 +29,8 @@ import { toast } from "sonner";
 import Nango from "@nangohq/frontend";
 import {
   GOOGLE_MAIL_PROVIDER,
+  GOOGLE_SHEET_PROVIDER,
+  GOOGLE_DRIVE_PROVIDER,
   confirmConnection,
   createConnectSession,
   disconnectIntegration,
@@ -864,24 +869,67 @@ export function SettingsPage() {
   );
 }
 
-/** Real "Connect Gmail" flow — POST /api/core/integrations/connect-session mints a
- * Nango Connect UI session token, the popup handles Google OAuth, and on success
- * we save the resulting connectionId via POST /api/core/integrations/connections.
- * See docs/CONNECTORS_NANGO.md in the backend repo. */
+interface IntegrationDef {
+  provider: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+}
+
+// Gmail is the only one actually read from today. Sheets/Drive are real
+// connect/disconnect targets (real Nango OAuth, real stored connection
+// status) but nothing in the app reads or writes through them yet — see
+// docs/CONNECTORS_NANGO.md.
+const INTEGRATIONS: IntegrationDef[] = [
+  {
+    provider: GOOGLE_MAIL_PROVIDER,
+    label: "Gmail",
+    description: "Real inbox access for Submission Market Matching",
+    icon: Mail,
+  },
+  {
+    provider: GOOGLE_SHEET_PROVIDER,
+    label: "Google Sheets",
+    description: "Connect/disconnect only for now — no data is read or written yet",
+    icon: FileSpreadsheet,
+  },
+  {
+    provider: GOOGLE_DRIVE_PROVIDER,
+    label: "Google Drive",
+    description: "Connect/disconnect only for now — no data is read or written yet",
+    icon: HardDrive,
+  },
+];
+
+/** Real "Connect" flow for any of the above — POST /api/core/integrations/connect-session
+ * mints a Nango Connect UI session token scoped to one provider, the popup handles Google
+ * OAuth, and on success we save the resulting connectionId via
+ * POST /api/core/integrations/connections. See docs/CONNECTORS_NANGO.md in the backend repo. */
 function IntegrationsPanel() {
+  return (
+    <Panel title="Integrations">
+      <div className="space-y-3">
+        {INTEGRATIONS.map((def) => (
+          <IntegrationRow key={def.provider} {...def} />
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function IntegrationRow({ provider, label, description, icon: Icon }: IntegrationDef) {
   const queryClient = useQueryClient();
   const integrationsQuery = useQuery({
     queryKey: ["integrations"],
     queryFn: listIntegrations,
   });
-  const gmailStatus =
-    integrationsQuery.data?.find((i) => i.provider === GOOGLE_MAIL_PROVIDER)?.status ??
-    "disconnected";
-  const connected = gmailStatus === "connected";
+  const connected =
+    (integrationsQuery.data?.find((i) => i.provider === provider)?.status ?? "disconnected") ===
+    "connected";
 
   const connectMutation = useMutation({
     mutationFn: async () => {
-      const session = await createConnectSession();
+      const session = await createConnectSession(provider);
       await new Promise<void>((resolve, reject) => {
         const nango = new Nango({});
         const connectUI = nango.openConnectUI({
@@ -905,64 +953,60 @@ function IntegrationsPanel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["integrations"] });
-      toast.success("Gmail connected");
+      toast.success(`${label} connected`);
     },
     onError: (err: unknown) =>
-      toast.error(err instanceof Error ? err.message : "Failed to connect Gmail"),
+      toast.error(err instanceof Error ? err.message : `Failed to connect ${label}`),
   });
 
   const disconnectMutation = useMutation({
-    mutationFn: () => disconnectIntegration(GOOGLE_MAIL_PROVIDER),
+    mutationFn: () => disconnectIntegration(provider),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["integrations"] });
-      toast.success("Gmail disconnected");
+      toast.success(`${label} disconnected`);
     },
     onError: (err: unknown) =>
-      toast.error(err instanceof Error ? err.message : "Failed to disconnect Gmail"),
+      toast.error(err instanceof Error ? err.message : `Failed to disconnect ${label}`),
   });
 
   return (
-    <Panel title="Integrations">
-      <div className="flex items-center justify-between rounded-lg border border-border p-3 text-sm">
-        <div className="flex items-center gap-3">
-          <Mail className="h-4 w-4 text-muted-foreground" />
-          <div>
-            <div className="font-medium">Gmail</div>
-            <div className="text-[11px] text-muted-foreground">
-              Real inbox access for Submission Market Matching
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span
-            className={`rounded-full border px-2 py-0.5 text-[10px] ${
-              connected
-                ? "border-emerald-600/30 bg-emerald-600/10 text-emerald-700"
-                : "border-border bg-secondary text-muted-foreground"
-            }`}
-          >
-            {connected ? "Connected" : "Not connected"}
-          </span>
-          {connected ? (
-            <Button
-              variant="secondary"
-              disabled={disconnectMutation.isPending}
-              onClick={() => disconnectMutation.mutate()}
-            >
-              Disconnect
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              disabled={connectMutation.isPending}
-              onClick={() => connectMutation.mutate()}
-            >
-              Connect Gmail
-            </Button>
-          )}
+    <div className="flex items-center justify-between rounded-lg border border-border p-3 text-sm">
+      <div className="flex items-center gap-3">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+        <div>
+          <div className="font-medium">{label}</div>
+          <div className="text-[11px] text-muted-foreground">{description}</div>
         </div>
       </div>
-    </Panel>
+      <div className="flex items-center gap-2">
+        <span
+          className={`rounded-full border px-2 py-0.5 text-[10px] ${
+            connected
+              ? "border-emerald-600/30 bg-emerald-600/10 text-emerald-700"
+              : "border-border bg-secondary text-muted-foreground"
+          }`}
+        >
+          {connected ? "Connected" : "Not connected"}
+        </span>
+        {connected ? (
+          <Button
+            variant="secondary"
+            disabled={disconnectMutation.isPending}
+            onClick={() => disconnectMutation.mutate()}
+          >
+            Disconnect
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            disabled={connectMutation.isPending}
+            onClick={() => connectMutation.mutate()}
+          >
+            Connect {label}
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 

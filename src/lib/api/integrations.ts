@@ -14,8 +14,8 @@ export interface ConnectSession {
   expires_at: string | null;
 }
 
-export function createConnectSession() {
-  return api.post<ConnectSession>(`${BASE}/connect-session`);
+export function createConnectSession(provider: string) {
+  return api.post<ConnectSession>(`${BASE}/connect-session`, { provider });
 }
 
 export interface Integration {
@@ -39,3 +39,7 @@ export function disconnectIntegration(provider: string) {
 }
 
 export const GOOGLE_MAIL_PROVIDER = "google-mail";
+// Connect/disconnect only for now — no read/write wiring exists yet for
+// either of these two (see core/config.py's nango_integration_sheet/drive).
+export const GOOGLE_SHEET_PROVIDER = "google-sheet";
+export const GOOGLE_DRIVE_PROVIDER = "google-drive";
