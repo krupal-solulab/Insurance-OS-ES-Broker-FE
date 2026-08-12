@@ -254,13 +254,14 @@ function TopBar({
           </kbd>
         </button>
         <ThemeToggle />
-        <button
+        {/* for future notification system, currently disabled */}
+        {/* <button
           className="relative rounded-lg border border-border p-2 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           aria-label="Notifications"
         >
           <Bell className="h-4 w-4" />
           <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-accent" />
-        </button>
+        </button> */}
         <div className="flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-1 py-1 pr-2">
           <div className="grid h-7 w-7 place-items-center rounded-full bg-foreground font-serif text-xs text-background">
             {initials || "?"}
