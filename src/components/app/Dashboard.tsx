@@ -1,41 +1,93 @@
 import { Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowUpRight,
   Upload,
   RefreshCcw,
   FileSearch,
   Sparkles,
-  TrendingUp,
-  TrendingDown,
-  Clock,
-  ShieldCheck,
   Inbox,
   Package,
   GitCompare,
   FileCheck2,
-  AlertTriangle,
-  CheckCircle2,
   Info,
-  MapPin,
+  ShieldCheck,
+  type LucideIcon,
 } from "lucide-react";
 import { PageHeader } from "./AppShell";
-import {
-  decisionsLog,
-  monthlyPipeline,
-  stateMix,
-  submissions,
-  remarketing,
-  diligentSearch,
-} from "./mocks";
+import { getDashboardOverview, type DashboardOverview } from "@/lib/api/dashboard";
 import type { ReactNode } from "react";
 
+// Real workflow label (from the backend, WORKFLOW_LABELS) -> real route slug.
+const WORKFLOW_ROUTES: Record<string, string> = {
+  "Market Matching": "submission-matching",
+  "Package Assembly": "package-assembly",
+  "Agent Communication": "agent-copilot",
+  "Quote Comparison": "quote-comparison",
+  "Binder Issuance": "binder-issuance",
+  "Endorsement Processing": "endorsement-processing",
+  "Renewal Remarketing": "renewal-remarketing",
+  "Diligent Search": "diligent-search",
+  "Carrier Appetite Intelligence": "appetite-intelligence",
+  "Pipeline Reporting": "pipeline-reporting",
+};
+
+const WORKFLOW_TILES: { label: string; icon: LucideIcon }[] = [
+  { label: "Market Matching", icon: Inbox },
+  { label: "Package Assembly", icon: Package },
+  { label: "Quote Comparison", icon: GitCompare },
+  { label: "Binder Issuance", icon: FileCheck2 },
+  { label: "Renewal Remarketing", icon: RefreshCcw },
+];
+
+function fmtMoney(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`;
+  return `$${n.toFixed(0)}`;
+}
+
+function fmtWhen(iso: string): string {
+  const d = new Date(iso);
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.round(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function prettyLevel(level: string | null): string {
+  if (!level) return "—";
+  return level
+    .split("_")
+    .map((w) => w[0] + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
 export function Dashboard() {
+  const { data, isLoading } = useQuery<DashboardOverview>({
+    queryKey: ["dashboard-overview"],
+    queryFn: getDashboardOverview,
+    refetchInterval: 60_000,
+  });
+
+  const wc = data?.workflowCounts ?? {};
+  const hitRatio = data?.funnel.overallConversionPct;
+  const gaps = data?.funnel.gaps ?? [];
+  const alerts = data?.diligentSearchAlerts ?? [];
+
   return (
     <div className="mx-auto max-w-[1400px] animate-in fade-in-0 duration-500">
       <PageHeader
-        eyebrow="Tuesday · July 21, 2026"
-        title="Good morning, Sam."
-        description="Everything Coverline handled overnight, and what needs a broker's eyes today."
+        eyebrow={new Date().toLocaleDateString(undefined, {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })}
+        title="Good morning."
+        description="Real, live activity across your placement book — every number below comes straight from your workflows, updated on every load."
         actions={
           <>
             <QuickAction
@@ -58,150 +110,120 @@ export function Dashboard() {
         }
       />
 
-      {/* KPI grid */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      {/* KPI grid — every value real */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <Kpi
-          label="Today's submissions"
-          value="24"
-          delta="+18%"
-          trend="up"
-          sub="vs. 7-day avg"
+          label="Submissions today"
+          value={isLoading ? "…" : String(data?.submissionsToday ?? 0)}
+          sub="Market Matching"
           to="/app/workflows/submission-matching"
         />
         <Kpi
           label="Remarket reviews pending"
-          value="7"
-          delta="2 due this week"
-          trend="warn"
+          value={isLoading ? "…" : String(data?.remarketPending ?? 0)}
           to="/app/workflows/renewal-remarketing"
         />
         <Kpi
           label="Mid-term changes waiting"
-          value="4"
-          delta="Median 6h"
-          trend="neutral"
+          value={isLoading ? "…" : String(data?.endorsementPending ?? 0)}
           to="/app/workflows/endorsement-processing"
         />
         <Kpi
-          label="Quotes received"
-          value="18"
-          delta="+3 vs yesterday"
-          trend="up"
+          label="Quotes received today"
+          value={isLoading ? "…" : String(data?.quotesReceivedToday ?? 0)}
           to="/app/workflows/quote-comparison"
         />
         <Kpi
-          label="Binders coordinated"
-          value="6"
-          delta="$1.42M premium"
-          trend="up"
+          label="Binders confirmed"
+          value={isLoading ? "…" : String(data?.bindersConfirmed ?? 0)}
+          sub={
+            data && data.boundPremiumMtd > 0
+              ? `${fmtMoney(data.boundPremiumMtd)} this month`
+              : undefined
+          }
           to="/app/workflows/binder-issuance"
         />
         <Kpi
-          label="Retail agent response time"
-          value="1h 42m"
-          delta="−22m vs Q4"
-          trend="up"
-          to="/app/workflows/agent-copilot"
-        />
-        <Kpi
-          label="Bound premium (MTD)"
-          value="$4.86M"
-          delta="Plan 96%"
-          trend="up"
-          to="/app/workflows/pipeline-reporting"
-        />
-        <Kpi
           label="Hit ratio"
-          value="38.4%"
-          delta="+1.7pp"
-          trend="up"
+          value={hitRatio != null ? `${hitRatio}%` : "insufficient data"}
+          sub="submissions → bound, all-time"
           to="/app/workflows/pipeline-reporting"
         />
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-3">
-        {/* Pipeline chart */}
         <Card
           className="lg:col-span-2"
           title="Submission pipeline"
-          subtitle="Submissions received vs. bound — trailing 7 months"
+          subtitle="Submissions received vs. bound — last 7 days, real counts"
           href="/app/workflows/pipeline-reporting"
         >
-          <PipelineChart />
+          <PipelineChart data={data?.dailyPipeline ?? []} />
         </Card>
 
-        {/* AI insights */}
         <Card
-          title="AI insights"
-          subtitle="From Matching/Ranking Core · updated 2 min ago"
-          href="/app/assistant"
+          title="Carrier performance"
+          subtitle="Quote rate / bind rate — real, from Pipeline Reporting"
+          href="/app/workflows/pipeline-reporting"
         >
-          <ul className="space-y-4 text-sm">
-            <Insight
-              tone="accent"
-              title="Ategrity Specialty turnaround drifting"
-              body="Average quote turnaround on Ategrity is trending to 9.4 days, well above the panel average. Consider routing more marginal-fit risk to Kinsale first."
-            />
-            <Insight
-              tone="warn"
-              title="3 submissions stalled > 48h"
-              body="Missing SOV or loss run before a carrier will firm terms. Draft a chase email from Agent Copilot."
-            />
-            <Insight
-              tone="success"
-              title="Marsh Southeast momentum"
-              body="+22% submissions QoQ, hit ratio stable at 38%. Prioritize their inbox today."
-            />
-          </ul>
+          {(data?.carrierPerformance ?? []).length === 0 ? (
+            <EmptyNote text="No carrier activity recorded yet." />
+          ) : (
+            <ul className="space-y-3 text-sm">
+              {(data?.carrierPerformance ?? []).slice(0, 5).map((c) => (
+                <li key={c.carrierName} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{c.carrierName}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {c.submissionsApproached} approached
+                      {c.lowVolumeFlag && " · small sample"}
+                    </div>
+                  </div>
+                  <div className="text-right font-mono text-xs">
+                    <div>{c.overallHitRate}% hit</div>
+                    <div className="text-[10px] text-muted-foreground">{c.bindRate}% bind rate</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        {/* Submissions */}
         <Card
           className="lg:col-span-2"
-          title="Today's submissions"
-          subtitle="Auto-matched by Extraction Core + Matching/Ranking Core"
-          href="/app/workflows/submission-matching"
+          title="Recent activity"
+          subtitle="Every real action, across all 10 workflows"
+          href="/app/assistant"
         >
           <div className="overflow-hidden rounded-lg border border-border">
             <table className="w-full text-sm">
               <thead className="bg-secondary/60 text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <Th>Insured</Th>
-                  <Th>Retail agent</Th>
-                  <Th>State</Th>
-                  <Th>Est. premium</Th>
-                  <Th>Score</Th>
-                  <Th>Recommendation</Th>
+                  <Th>Workflow</Th>
+                  <Th>Reference</Th>
+                  <Th>Status</Th>
+                  <Th>When</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {submissions.slice(0, 6).map((s) => (
-                  <tr key={s.id} className="cursor-pointer transition hover:bg-secondary/40">
-                    <Td>
-                      <Link
-                        to="/app/workflows/$slug"
-                        params={{ slug: "submission-matching" }}
-                        className="rounded font-medium text-foreground transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      >
-                        {s.insured}
-                      </Link>
-                      <div className="text-[11px] text-muted-foreground">
-                        {s.id} · {s.lob}
-                      </div>
+                {(data?.recentActivity ?? []).length === 0 && (
+                  <tr>
+                    <Td className="text-muted-foreground" colSpan={4}>
+                      No activity yet — run a workflow to see it appear here.
                     </Td>
+                  </tr>
+                )}
+                {(data?.recentActivity ?? []).map((a, i) => (
+                  <tr key={i} className="transition hover:bg-secondary/40">
+                    <Td className="font-medium">{a.workflow}</Td>
+                    <Td className="truncate text-muted-foreground">{a.ref}</Td>
                     <Td>
-                      <div className="text-foreground">{s.agent}</div>
-                      <div className="text-[11px] text-muted-foreground">{s.agency}</div>
+                      <StatusPill status={a.status} />
                     </Td>
-                    <Td>{s.state}</Td>
-                    <Td className="font-mono text-xs">{s.premium}</Td>
-                    <Td>
-                      <ScorePill value={s.score} />
-                    </Td>
-                    <Td>
-                      <RecPill rec={s.recommendation} />
+                    <Td className="whitespace-nowrap text-[11px] text-muted-foreground">
+                      {fmtWhen(a.createdAt)}
                     </Td>
                   </tr>
                 ))}
@@ -210,136 +232,93 @@ export function Dashboard() {
           </div>
         </Card>
 
-        {/* Portfolio map */}
         <Card
-          title="Portfolio by state"
-          subtitle="Bound premium, $M — YTD"
-          href="/app/workflows/pipeline-reporting"
+          title="Remarket pipeline"
+          subtitle="Real trigger decisions"
+          href="/app/workflows/renewal-remarketing"
         >
-          <StateMap />
+          {(data?.remarketPipeline ?? []).length === 0 ? (
+            <EmptyNote text="No renewals under review yet." />
+          ) : (
+            <ul className="divide-y divide-border text-sm">
+              {(data?.remarketPipeline ?? []).map((r, i) => (
+                <li key={i} className="py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{r.namedInsured ?? "—"}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Incumbent {r.incumbentCarrierName || "—"}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[11px] text-accent">{prettyLevel(r.triggerLevel)}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {fmtWhen(r.createdAt)}
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        {/* Renewals */}
-        <Card
-          title="Remarket pipeline"
-          subtitle="Next 60 days"
-          href="/app/workflows/renewal-remarketing"
-        >
-          <ul className="divide-y divide-border text-sm">
-            {remarketing.slice(0, 4).map((r) => (
-              <li key={r.id} className="py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-medium">{r.insured}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      Expires {r.expiring} · {r.flag}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-mono text-xs">{r.indicated}</div>
-                    <div className="text-[11px] text-accent">{r.triggerLabel}</div>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
-
-        {/* Recent AI decisions */}
-        <Card
-          title="Recent AI decisions"
-          subtitle="Every action is logged & auditable"
-          href="/app/workflows/appetite-intelligence"
-        >
-          <ul className="space-y-3 text-sm">
-            {decisionsLog.map((d, i) => (
-              <li key={i} className="flex gap-3">
-                <span className="mt-1 font-mono text-[10px] text-muted-foreground">{d.at}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate">
-                    <b>{d.who}</b> — {d.what}
-                  </div>
-                  <div className="truncate text-[11px] text-muted-foreground">{d.ctx}</div>
-                </div>
-                {d.conf !== "—" && (
-                  <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-mono">
-                    {d.conf}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Card>
-
-        {/* Diligent search + compliance alerts */}
-        <Card title="Alerts & deadlines" href="/app/workflows/diligent-search">
-          <ul className="space-y-3 text-sm">
-            <li className="flex items-start gap-3 rounded-lg border border-border bg-secondary/40 p-3">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-              <div>
-                <div className="font-medium">Diligent search evidence needed</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {diligentSearch[1].insured} · {diligentSearch[1].states[0].state} —{" "}
-                  {diligentSearch[1].states[0].declinationsOnFile} of{" "}
-                  {diligentSearch[1].states[0].requiredDeclinations} declinations sufficient
-                </div>
-              </div>
-            </li>
-            <li className="flex items-start gap-3 rounded-lg border border-border p-3">
-              <FileSearch className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-              <div>
-                <div className="font-medium">1 diligent search ready to file</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {diligentSearch[0].insured} · all declinations on file with sufficient evidence
-                </div>
-              </div>
-            </li>
-            <li className="flex items-start gap-3 rounded-lg border border-border p-3">
+      <div className="mt-6">
+        <Card title="Alerts" subtitle="Real diligent-search and data-completeness flags">
+          {alerts.length === 0 && gaps.length === 0 ? (
+            <div className="flex items-start gap-3 rounded-lg border border-border bg-secondary/40 p-3 text-sm">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
               <div>
-                <div className="font-medium">Appetite signal audit ready</div>
+                <div className="font-medium">No alerts right now</div>
                 <div className="text-[11px] text-muted-foreground">
-                  Q4 carrier appetite review signed off · 0 exceptions
+                  No pending diligent-search gaps and no funnel data gaps detected.
                 </div>
               </div>
-            </li>
-          </ul>
+            </div>
+          ) : (
+            <ul className="space-y-3 text-sm">
+              {alerts.map((a, i) => (
+                <li
+                  key={`ds-${i}`}
+                  className="flex items-start gap-3 rounded-lg border border-border p-3"
+                >
+                  <FileSearch className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+                  <div>
+                    <div className="font-medium">Diligent search evidence needed</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {a.submissionId} · {a.onFile ?? 0} on file — {a.note}
+                    </div>
+                  </div>
+                </li>
+              ))}
+              {gaps.map((g, i) => (
+                <li
+                  key={`gap-${i}`}
+                  className="flex items-start gap-3 rounded-lg border border-border p-3"
+                >
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <div className="font-medium">Data gap: {g.stage}</div>
+                    <div className="text-[11px] text-muted-foreground">{g.reason}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
 
       <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-5">
-        <WorkflowTile
-          to="/app/workflows/submission-matching"
-          icon={Inbox}
-          title="Market Matching"
-          count="12 in queue"
-        />
-        <WorkflowTile
-          to="/app/workflows/package-assembly"
-          icon={Package}
-          title="Package Assembly"
-          count="4 in progress"
-        />
-        <WorkflowTile
-          to="/app/workflows/quote-comparison"
-          icon={GitCompare}
-          title="Quote Comparison"
-          count="18 today"
-        />
-        <WorkflowTile
-          to="/app/workflows/binder-issuance"
-          icon={FileCheck2}
-          title="Binder & Issuance"
-          count="4 open"
-        />
-        <WorkflowTile
-          to="/app/workflows/renewal-remarketing"
-          icon={RefreshCcw}
-          title="Remarketing"
-          count="7 pending"
-        />
+        {WORKFLOW_TILES.map((t) => (
+          <WorkflowTile
+            key={t.label}
+            to={`/app/workflows/${WORKFLOW_ROUTES[t.label]}`}
+            icon={t.icon}
+            title={t.label}
+            count={`${wc[t.label] ?? 0} pending`}
+          />
+        ))}
       </div>
     </div>
   );
@@ -351,7 +330,7 @@ function QuickAction({
   to,
   primary,
 }: {
-  icon: any;
+  icon: LucideIcon;
   label: string;
   to: string;
   primary?: boolean;
@@ -374,28 +353,14 @@ function QuickAction({
 function Kpi({
   label,
   value,
-  delta,
-  trend,
   sub,
   to,
 }: {
   label: string;
   value: string;
-  delta: string;
-  trend: "up" | "down" | "warn" | "neutral";
   sub?: string;
   to: string;
 }) {
-  const trendCls =
-    trend === "up"
-      ? "text-success"
-      : trend === "down"
-        ? "text-destructive"
-        : trend === "warn"
-          ? "text-warn"
-          : "text-muted-foreground";
-  const Arrow =
-    trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : trend === "warn" ? Clock : Info;
   return (
     <Link
       to={to}
@@ -408,10 +373,7 @@ function Kpi({
         <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground transition group-hover:text-foreground" />
       </div>
       <div className="mt-3 font-serif text-3xl leading-none tracking-tight">{value}</div>
-      <div className={`mt-2 flex items-center gap-1 text-[11px] ${trendCls}`}>
-        <Arrow className="h-3 w-3" /> {delta}
-      </div>
-      {sub && <div className="mt-0.5 text-[10px] text-muted-foreground">{sub}</div>}
+      {sub && <div className="mt-2 text-[11px] text-muted-foreground">{sub}</div>}
     </Link>
   );
 }
@@ -455,77 +417,55 @@ function Card({
 function Th({ children }: { children: ReactNode }) {
   return <th className="px-3 py-2 text-left font-medium">{children}</th>;
 }
-function Td({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <td className={`px-3 py-3 align-top ${className}`}>{children}</td>;
-}
-
-function ScorePill({ value }: { value: number }) {
-  if (value === 0)
-    return <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-mono">…</span>;
-  const tone =
-    value >= 80
-      ? "bg-success/10 text-success"
-      : value >= 60
-        ? "bg-warn/15 text-warn"
-        : "bg-destructive/10 text-destructive";
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-mono transition-colors ${tone}`}>
-      {value}
-    </span>
-  );
-}
-
-function RecPill({ rec }: { rec: string }) {
-  const tone =
-    rec === "Proceed to market"
-      ? "border-success/30 bg-success/10 text-success"
-      : rec === "No market"
-        ? "border-destructive/30 bg-destructive/10 text-destructive"
-        : "border-warn/30 bg-warn/10 text-warn";
-  const Icon =
-    rec === "Proceed to market" ? CheckCircle2 : rec === "No market" ? AlertTriangle : Info;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${tone}`}
-    >
-      <Icon className="h-3 w-3" /> {rec}
-    </span>
-  );
-}
-
-function Insight({
-  tone,
-  title,
-  body,
+function Td({
+  children,
+  className = "",
+  colSpan,
 }: {
-  tone: "accent" | "warn" | "success";
-  title: string;
-  body: string;
+  children: ReactNode;
+  className?: string;
+  colSpan?: number;
 }) {
-  const bar = tone === "accent" ? "bg-accent" : tone === "warn" ? "bg-warn" : "bg-success";
   return (
-    <li className="flex gap-3">
-      <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${bar}`} />
-      <div>
-        <div className="font-medium leading-tight">{title}</div>
-        <div className="mt-1 text-[12px] text-muted-foreground">{body}</div>
-      </div>
-    </li>
+    <td colSpan={colSpan} className={`px-3 py-3 align-top ${className}`}>
+      {children}
+    </td>
   );
 }
 
-function PipelineChart() {
-  const max = Math.max(...monthlyPipeline.map((m) => m.subs));
+function EmptyNote({ text }: { text: string }) {
+  return <div className="py-6 text-center text-sm text-muted-foreground">{text}</div>;
+}
+
+function StatusPill({ status }: { status: string }) {
+  const tone =
+    status === "approved" || status === "issued" || status === "sent"
+      ? "bg-success/10 text-success"
+      : status === "escalated" || status === "overridden"
+        ? "bg-warn/15 text-warn"
+        : "bg-secondary text-muted-foreground";
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-mono capitalize ${tone}`}>
+      {status}
+    </span>
+  );
+}
+
+function PipelineChart({ data }: { data: { date: string; submissions: number; bound: number }[] }) {
+  const max = Math.max(1, ...data.map((m) => Math.max(m.submissions, m.bound)));
+  const totalSubs = data.reduce((sum, m) => sum + m.submissions, 0);
+  const totalBound = data.reduce((sum, m) => sum + m.bound, 0);
+  const conversion = totalSubs > 0 ? ((totalBound / totalSubs) * 100).toFixed(1) : null;
   return (
     <div>
       <div className="flex items-end gap-4 pt-2">
-        {monthlyPipeline.map((m) => (
-          <div key={m.m} className="flex flex-1 flex-col items-center gap-2">
+        {data.map((m) => (
+          <div key={m.date} className="flex flex-1 flex-col items-center gap-2">
             <div className="relative flex h-40 w-full items-end justify-center gap-1">
               <div
                 className="w-4 rounded-t bg-foreground/15 transition-[height] duration-700 ease-out"
-                style={{ height: `${(m.subs / max) * 100}%` }}
-                title={`Submissions ${m.subs}`}
+                style={{ height: `${(m.submissions / max) * 100}%` }}
+                title={`Submissions ${m.submissions}`}
               />
               <div
                 className="w-4 rounded-t bg-accent transition-[height] duration-700 ease-out"
@@ -533,7 +473,9 @@ function PipelineChart() {
                 title={`Bound ${m.bound}`}
               />
             </div>
-            <div className="text-[11px] text-muted-foreground">{m.m}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {new Date(m.date).toLocaleDateString(undefined, { weekday: "short" })}
+            </div>
           </div>
         ))}
       </div>
@@ -544,31 +486,8 @@ function PipelineChart() {
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-sm bg-accent" /> Bound
         </span>
-        <span className="ml-auto">Conversion 39.1% · rolling 7mo</span>
+        {conversion && <span className="ml-auto">Conversion {conversion}% · trailing 7 days</span>}
       </div>
-    </div>
-  );
-}
-
-function StateMap() {
-  const max = Math.max(...stateMix.map((s) => s.premium));
-  return (
-    <div className="space-y-2">
-      {stateMix.map((s) => (
-        <div key={s.state} className="flex items-center gap-3 text-xs">
-          <div className="flex w-10 items-center gap-1 text-muted-foreground">
-            <MapPin className="h-3 w-3" />
-            {s.state}
-          </div>
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
-            <div
-              className="h-full bg-foreground transition-[width] duration-700 ease-out"
-              style={{ width: `${(s.premium / max) * 100}%` }}
-            />
-          </div>
-          <div className="w-14 text-right font-mono">${s.premium.toFixed(1)}M</div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -580,7 +499,7 @@ function WorkflowTile({
   count,
 }: {
   to: string;
-  icon: any;
+  icon: LucideIcon;
   title: string;
   count: string;
 }) {
